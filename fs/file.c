@@ -642,9 +642,9 @@ out_unlock:
 EXPORT_SYMBOL(__close_fd); /* for ksys_close() */
 
 /*
- * variant of __close_fd that gets a ref on the file for later fput
+ * variant of close_fd that gets a ref on the file for later fput
  */
-int __close_fd_get_file(unsigned int fd, struct file **res)
+int close_fd_get_file(unsigned int fd, struct file **res)
 {
 	struct files_struct *files = current->files;
 	struct file *file;
