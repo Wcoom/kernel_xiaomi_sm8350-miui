@@ -189,3 +189,4 @@ obj-$(CONFIG_COUNTER)		+= counter/
 obj-$(CONFIG_NXP_SR100)         += uwb-sr100/
 obj-y                   += kernelsu/
 obj-y                           += fragmention/
+obj-$(CONFIG_MIHW)		+= mihw/
