@@ -41,7 +41,6 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 	int dscp = 0, use_dscp = 0;
 	char extra[100], int_arg[100], intf_arg[100], ip_dst[100], ping[100];
 	struct in6_addr ip6_addr;
-	bool broadcast = false;
 
 	val = get_param(cmd, "Type");
 	if (!val)
@@ -79,14 +78,6 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 	if (val == NULL)
 		return INVALID_SEND_STATUS;
 	size = atoi(val);
-	if (type != 2 && strcmp(dst, BROADCAST_ADDR) == 0) {
-		if (size > 1472) {
-			send_resp(dut, conn, SIGMA_ERROR,
-				  "ErrorCode,Unsupported broadcast ping frame size");
-			return STATUS_SENT;
-		}
-		broadcast = true;
-	}
 
 	val = get_param(cmd, "frameRate");
 	if (val == NULL)
@@ -153,7 +144,7 @@ static enum sigma_cmd_result cmd_traffic_send_ping(struct sigma_dut *dut,
 		"ping%s%s -c %d%s -s %d%s -q%s %s > %s"
 		"/sigma_dut-ping.%d &\n"
 		"echo $! > %s/sigma_dut-ping-pid.%d\n",
-		type == 2 ? "6" : "", broadcast ? " -b" : "",
+		type == 2 ? "6" : "", type == 2 ? "" : " -b",
 		pkts, int_arg, size, extra,
 		intf_arg, dst, dut->sigma_tmpdir, id, dut->sigma_tmpdir, id);
 

@@ -2623,7 +2623,7 @@ static int set_eap_common(struct sigma_dut *dut, struct sigma_conn *conn,
 			char msg[300];
 
 			snprintf(msg, sizeof(msg),
-				 "ErrorCode,imsiPrivacyCert file (%s) not found",
+				 "ErrorCode,trustedRootCA file (%s) not found",
 				 buf);
 			send_resp(dut, conn, SIGMA_ERROR, msg);
 			return STATUS_SENT_ERROR;
@@ -2633,11 +2633,6 @@ static int set_eap_common(struct sigma_dut *dut, struct sigma_conn *conn,
 				       buf) < 0)
 			return ERROR_SEND_STATUS;
 	}
-
-	val = get_param(cmd, "imsiPrivacyCertID");
-	if (val && set_network_quoted(ifname, id, "imsi_privacy_attr",
-				      val) < 0)
-		return ERROR_SEND_STATUS;
 
 	if (dut->akm_values &
 	    ((1 << AKM_FILS_SHA256) |
@@ -9342,7 +9337,8 @@ static enum sigma_cmd_result cmd_sta_reset_default(struct sigma_dut *dut,
 	    lowi_cmd_sta_reset_default(dut, conn, cmd) < 0)
 		return ERROR_SEND_STATUS;
 
-	if (is_passpoint_r2_or_newer(dut->program)) {
+	if (dut->program == PROGRAM_HS2_R2 || dut->program == PROGRAM_HS2_R3 ||
+	    dut->program == PROGRAM_HS2_R4) {
 		unlink("SP/wi-fi.org/pps.xml");
 		if (system("rm -r SP/*") != 0) {
 		}
@@ -9444,12 +9440,15 @@ static enum sigma_cmd_result cmd_sta_reset_default(struct sigma_dut *dut,
 
 	set_ps(intf, dut, 0);
 
-	if (is_passpoint(dut->program)) {
+	if (dut->program == PROGRAM_HS2 || dut->program == PROGRAM_HS2_R2 ||
+	    dut->program == PROGRAM_HS2_R3 || dut->program == PROGRAM_HS2_R4) {
 		wpa_command(intf, "SET interworking 1");
 		wpa_command(intf, "SET hs20 1");
 	}
 
-	if (is_passpoint_r2_or_newer(dut->program) ||
+	if (dut->program == PROGRAM_HS2_R2 ||
+	    dut->program == PROGRAM_HS2_R3 ||
+	    dut->program == PROGRAM_HS2_R4 ||
 	    dut->program == PROGRAM_OCE) {
 		wpa_command(intf, "SET pmf 1");
 	} else {
@@ -16213,7 +16212,8 @@ static int sta_add_credential_sim(struct sigma_dut *dut,
 		return 0;
 	}
 
-	if (is_passpoint_r2_or_newer(dut->program)) {
+	if (dut->program == PROGRAM_HS2_R2 || dut->program == PROGRAM_HS2_R3 ||
+	    dut->program == PROGRAM_HS2_R4) {
 		/*
 		 * Set provisioning_sp for the test cases where SIM/USIM
 		 * provisioning is used.
