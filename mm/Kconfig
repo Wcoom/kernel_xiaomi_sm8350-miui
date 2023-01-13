@@ -850,6 +850,7 @@ config OOM_TASK_PRIORITY_ADJ_LIMIT
 # multi-gen LRU {
 config LRU_GEN
 	bool "Multi-Gen LRU"
+	default y
 	depends on MMU
 	# the following options can use up the spare bits in page flags
 	depends on !MAXSMP && (64BIT || !SPARSEMEM || SPARSEMEM_VMEMMAP)
@@ -859,6 +860,7 @@ config LRU_GEN
 
 config LRU_GEN_ENABLED
 	bool "Enable by default"
+	default y
 	depends on LRU_GEN
 	help
 	  This option enables the multi-gen LRU by default.
