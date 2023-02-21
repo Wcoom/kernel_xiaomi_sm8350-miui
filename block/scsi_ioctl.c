@@ -172,6 +172,7 @@ static void blk_set_cmd_filter_defaults(struct blk_cmd_filter *filter)
 	__set_bit(WRITE_SAME_16, filter->write_ok);
 	__set_bit(WRITE_SAME_32, filter->write_ok);
 	__set_bit(ERASE, filter->write_ok);
+	__set_bit(WRITE_BUFFER, filter->write_ok);
 	__set_bit(GPCMD_MODE_SELECT_10, filter->write_ok);
 	__set_bit(MODE_SELECT, filter->write_ok);
 	__set_bit(LOG_SELECT, filter->write_ok);
@@ -504,7 +505,7 @@ int sg_scsi_ioctl(struct request_queue *q, struct gendisk *disk, fmode_t mode,
 		if (copy_to_user(sic->data, buffer, out_len))
 			err = -EFAULT;
 	}
-	
+
 error:
 	blk_put_request(rq);
 

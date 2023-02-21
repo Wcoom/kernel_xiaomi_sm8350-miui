@@ -246,7 +246,7 @@ static bool bt_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	 */
 	rq = blk_mq_find_and_get_req(tags, bitnr);
 	if (!rq)
-		return true;
+	return true;
 
 	if (rq->q == hctx->queue && rq->mq_hctx == hctx)
 		ret = iter_data->fn(hctx, rq, iter_data->data, reserved);
@@ -305,7 +305,7 @@ static bool bt_tags_iter(struct sbitmap *bitmap, unsigned int bitnr, void *data)
 	 */
 	rq = blk_mq_find_and_get_req(tags, bitnr);
 	if (!rq)
-		return true;
+	return true;
 	if (blk_mq_request_started(rq))
 		ret = iter_data->fn(rq, iter_data->data, reserved);
 	blk_mq_put_rq_ref(rq);
@@ -352,6 +352,14 @@ static void bt_tags_for_each(struct blk_mq_tags *tags, struct sbitmap_queue *bt,
 static void blk_mq_all_tag_busy_iter(struct blk_mq_tags *tags,
 		busy_tag_iter_fn *fn, void *priv)
 {
+#ifdef CONFIG_MAS_BLK
+	if (tags->set && tags->set->mas_tagset_ops &&
+		tags->set->mas_tagset_ops->tagset_all_tag_busy_iter_fn) {
+		tags->set->mas_tagset_ops->tagset_all_tag_busy_iter_fn(
+			tags, fn, priv);
+		return;
+	}
+#endif
 	if (tags->nr_reserved_tags)
 		bt_tags_for_each(tags, &tags->breserved_tags, fn, priv, true);
 	bt_tags_for_each(tags, &tags->bitmap_tags, fn, priv, false);
@@ -453,6 +461,14 @@ void blk_mq_queue_tag_busy_iter(struct request_queue *q, busy_iter_fn *fn,
 		if (!blk_mq_hw_queue_mapped(hctx))
 			continue;
 
+#ifdef CONFIG_MAS_BLK
+		if (tags->set && tags->set->mas_tagset_ops &&
+			tags->set->mas_tagset_ops->tagset_tag_busy_iter_fn) {
+			tags->set->mas_tagset_ops->tagset_tag_busy_iter_fn(
+				hctx, fn, priv);
+			continue;
+		}
+#endif
 		if (tags->nr_reserved_tags)
 			bt_for_each(hctx, &tags->breserved_tags, fn, priv, true);
 		bt_for_each(hctx, &tags->bitmap_tags, fn, priv, false);
