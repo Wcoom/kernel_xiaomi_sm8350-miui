@@ -22,6 +22,8 @@
 #include <trace/hooks/sysrqcrash.h>
 #include <trace/hooks/cgroup.h>
 #include <trace/hooks/sys.h>
+#include <platform/trace/hooks/hungtask.h>
+#include <platform/trace/hooks/memcheck.h>
 
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
@@ -73,3 +75,14 @@ EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_map_util_freq);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_em_pd_energy);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_cgroup_set_task);
 EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_syscall_prctl_finished);
+EXPORT_TRACEPOINT_SYMBOL_GPL(set_did_panic);
+EXPORT_TRACEPOINT_SYMBOL_GPL(set_timeout_secs);
+EXPORT_TRACEPOINT_SYMBOL_GPL(check_tasks);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mmap_sem_debug);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_set_buddy_track);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_track_lslub_pages);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_set_slub_alloc_track);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_set_slub_free_track);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_mem_stats_show);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_vmalloc_detail_show);
+EXPORT_TRACEPOINT_SYMBOL_GPL(mm_set_skb_pages_zone_state);

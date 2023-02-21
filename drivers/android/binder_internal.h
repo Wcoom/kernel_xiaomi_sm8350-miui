@@ -155,7 +155,7 @@ enum binder_stat_types {
 };
 
 struct binder_stats {
-	atomic_t br[_IOC_NR(BR_FAILED_REPLY) + 1];
+	atomic_t br[_IOC_NR(BR_ONEWAY_SPAM_SUSPECT) + 1];
 	atomic_t bc[_IOC_NR(BC_REPLY_SG) + 1];
 	atomic_t obj_created[BINDER_STAT_COUNT];
 	atomic_t obj_deleted[BINDER_STAT_COUNT];
@@ -174,12 +174,29 @@ struct binder_work {
 	enum binder_work_type {
 		BINDER_WORK_TRANSACTION = 1,
 		BINDER_WORK_TRANSACTION_COMPLETE,
+		BINDER_WORK_TRANSACTION_ONEWAY_SPAM_SUSPECT,
 		BINDER_WORK_RETURN_ERROR,
 		BINDER_WORK_NODE,
 		BINDER_WORK_DEAD_BINDER,
 		BINDER_WORK_DEAD_BINDER_AND_CLEAR,
 		BINDER_WORK_CLEAR_DEATH_NOTIFICATION,
+		BINDER_WORK_TRANSLATION_COMPLETE,
 	} type;
+
+#ifdef CONFIG_HW_BINDER_FG_REQ_FIRST
+	uint64_t seq;
+#endif
+
+#ifdef CONFIG_HW_BINDER_SCHED
+	u64 binder_begin;
+	int qos;
+	uid_t sender_euid;
+#endif
+};
+
+struct binder_translation {
+	struct binder_work work;
+	uint32_t desc;
 };
 
 struct binder_error {
@@ -388,8 +405,21 @@ struct binder_priority {
  *                        (protected by binder_deferred_lock)
  * @deferred_work:        bitmap of deferred work to perform
  *                        (protected by binder_deferred_lock)
+ * @outstanding_txns:     number of transactions to be transmitted before
+ *                        processes in freeze_wait are woken up
+ *                        (protected by @inner_lock)
  * @is_dead:              process is dead and awaiting free
  *                        when outstanding transactions are cleaned up
+ *                        (protected by @inner_lock)
+ * @is_frozen:            process is frozen and unable to service
+ *                        binder transactions
+ *                        (protected by @inner_lock)
+ * @sync_recv:            process received sync transactions since last frozen
+ *                        (protected by @inner_lock)
+ * @async_recv:           process received async transactions since last frozen
+ *                        (protected by @inner_lock
+ * @freeze_wait:          waitqueue of processes waiting for all outstanding
+ *                        transactions to be processed
  *                        (protected by @inner_lock)
  * @todo:                 list of work for this process
  *                        (protected by @inner_lock)
@@ -417,6 +447,8 @@ struct binder_priority {
  * @outer_lock:           no nesting under innor or node lock
  *                        Lock order: 1) outer, 2) node, 3) inner
  * @binderfs_entry:       process-specific binderfs log file
+ * @oneway_spam_detection_enabled: process enabled oneway spam detection
+ *                        or not
  *
  * Bookkeeping structure for binder processes
  */
@@ -431,9 +463,28 @@ struct binder_proc {
 	struct task_struct *tsk;
 	struct hlist_node deferred_work_node;
 	int deferred_work;
+	int outstanding_txns;
 	bool is_dead;
+	bool is_frozen;
+	bool sync_recv;
+	bool async_recv;
+	wait_queue_head_t freeze_wait;
 
 	struct list_head todo;
+#ifdef CONFIG_HW_BINDER_FG_REQ_FIRST
+	struct list_head fg_todo;
+	uint32_t fg_count;
+#endif
+#ifdef CONFIG_HW_BINDER_ALLOC_REF_OPT
+	unsigned long *free_ref;
+#endif
+#ifdef CONFIG_HW_BINDER_SCHED
+	bool is_system_server;
+	struct list_head bg_todo;
+	u64 last_check_time;
+	uint32_t bg_count;
+	int dynamic_qos_attr;
+#endif
 	struct binder_stats stats;
 	struct list_head delivered_death;
 	int max_threads;
@@ -447,7 +498,31 @@ struct binder_proc {
 	spinlock_t inner_lock;
 	spinlock_t outer_lock;
 	struct dentry *binderfs_entry;
+	bool oneway_spam_detection_enabled;
 };
+
+/**
+ * struct binder_proc_ext - binder process bookkeeping
+ * @proc:            element for binder_procs list
+ * @cred                  struct cred associated with the `struct file`
+ *                        in binder_open()
+ *                        (invariant after initialized)
+ *
+ * Extended binder_proc -- needed to add the "cred" field without
+ * changing the KMI for binder_proc.
+ */
+struct binder_proc_ext {
+    struct binder_proc proc;
+    const struct cred *cred;
+};
+
+static inline const struct cred *binder_get_cred(struct binder_proc *proc)
+{
+    struct binder_proc_ext *eproc;
+
+    eproc = container_of(proc, struct binder_proc_ext, proc);
+    return eproc->cred;
+}
 
 /**
  * struct binder_thread - binder thread bookkeeping
@@ -492,6 +567,9 @@ struct binder_thread {
 	struct list_head waiting_thread_node;
 	int pid;
 	int looper;              /* only modified by this thread */
+#ifdef CONFIG_HW_BINDER_SCHED
+	unsigned int flag;       /* only modified by this thread */
+#endif
 	bool looper_need_return; /* can be written by other thread */
 	struct binder_transaction *transaction_stack;
 	struct list_head todo;
@@ -526,6 +604,14 @@ struct binder_transaction {
 	int debug_id;
 	struct binder_work work;
 	struct binder_thread *from;
+#ifdef CONFIG_HW_ASYNC_BINDER_TRANS
+	struct binder_thread *async_from;
+#endif
+#ifdef CONFIG_BINDER_TRANSACTION_PROC_BRIEF
+	int async_from_pid;
+	int async_from_tid;
+	u64 timestamp;
+#endif
 	struct binder_transaction *from_parent;
 	struct binder_proc *to_proc;
 	struct binder_thread *to_thread;
