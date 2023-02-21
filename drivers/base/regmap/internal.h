@@ -299,4 +299,6 @@ static inline unsigned int regcache_get_index_by_order(const struct regmap *map,
 	return reg >> map->reg_stride_order;
 }
 
+int dump_create_file(void);
+int grab_spmi_map(struct regmap *map);
 #endif

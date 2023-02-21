@@ -21,6 +21,8 @@ struct regmap_debugfs_node {
 	struct list_head link;
 };
 
+#define DUMP_SPMI_NAME  "spmi0-00"
+
 static unsigned int dummy_index;
 static struct dentry *regmap_debugfs_root;
 static LIST_HEAD(regmap_debugfs_early_list);
@@ -721,6 +723,17 @@ void regmap_debugfs_init(struct regmap *map, const char *name)
 
 	if (map->cache_ops && map->cache_ops->debugfs_init)
 		map->cache_ops->debugfs_init(map);
+
+	/* add for full_dump */
+	if (!strcmp(name, DUMP_SPMI_NAME)) {
+		if (grab_spmi_map(map))
+			pr_err("dump file map grab err name:%s", name);
+		else
+			pr_err("dump file map grab succ");
+
+		if (dump_create_file())
+			pr_err("dumpfile proc create failed");
+	}
 }
 
 void regmap_debugfs_exit(struct regmap *map)
