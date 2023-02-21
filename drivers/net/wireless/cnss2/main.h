@@ -15,7 +15,7 @@
 #include <linux/pm_qos.h>
 #include <linux/platform_device.h>
 #include <net/cnss2.h>
-#if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2)
+#if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2) || IS_ENABLED(CONFIG_QCOM_MINIDUMP)
 #include <soc/qcom/memory_dump.h>
 #endif
 #if IS_ENABLED(CONFIG_MSM_SUBSYSTEM_RESTART) || \
@@ -581,4 +581,5 @@ int cnss_set_feature_list(struct cnss_plat_data *plat_priv,
 			  enum cnss_feature_v01 feature);
 int cnss_get_feature_list(struct cnss_plat_data *plat_priv,
 			  u64 *feature_list);
+extern int wlan_ssr_trigger_panic(struct subsys_device *subsys_dev);
 #endif /* _CNSS_MAIN_H */

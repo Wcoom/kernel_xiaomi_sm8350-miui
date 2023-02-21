@@ -14,6 +14,8 @@
 #include <linux/export.h>
 #include <linux/bug.h>
 #include <soc/qcom/watchdog.h>
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
 
 void __raw_spin_lock_init(raw_spinlock_t *lock, const char *name,
 			  struct lock_class_key *key)
@@ -54,6 +56,8 @@ EXPORT_SYMBOL(__rwlock_init);
 static void spin_dump(raw_spinlock_t *lock, const char *msg)
 {
 	struct task_struct *owner = READ_ONCE(lock->owner);
+	int err;
+	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
 
 	if (owner == SPINLOCK_OWNER_INIT)
 		owner = NULL;
@@ -66,7 +70,12 @@ static void spin_dump(raw_spinlock_t *lock, const char *msg)
 		owner ? owner->comm : "<none>",
 		owner ? task_pid_nr(owner) : -1,
 		READ_ONCE(lock->owner_cpu));
+	trace_rb_sreason_set("spinlock_debug");
 
+	err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "Spinlock_bug,%s_%d", current->comm,
+		       task_pid_nr(current));
+	if (err >= 0)
+		trace_rb_attach_info_set(attach_info_buffer);
 #ifdef CONFIG_DEBUG_SPINLOCK_BITE_ON_BUG
 	qcom_wdt_trigger_bite();
 #elif defined(CONFIG_DEBUG_SPINLOCK_PANIC_ON_BUG)

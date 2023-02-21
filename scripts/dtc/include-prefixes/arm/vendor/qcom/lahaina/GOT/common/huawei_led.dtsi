@@ -1,0 +1,6 @@
+&pm8350c_rgb {
+        red {
+                leds_disting = "true";
+                cust_brightness = <50>;
+        };
+};

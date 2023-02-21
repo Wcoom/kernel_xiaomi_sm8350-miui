@@ -584,6 +584,65 @@ static const struct vadc_map_pt adcmap_gen3_batt_therm_100k[] = {
 	{ 6060,    980 }
 };
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+/* Resistance to voltage table */
+static const struct vadc_map_pt adcmap_battid_register_to_vol_100k[] = {
+	{ 100000, 900 },
+	{ 102000, 909 },
+	{ 104000, 918 },
+	{ 106000, 926 },
+	{ 108000, 935 },
+	{ 110000, 943 },
+	{ 112000, 951 },
+	{ 114000, 959 },
+	{ 116000, 967 },
+	{ 118000, 974 },
+	{ 120000, 982 },
+	{ 190000, 1179 },
+	{ 192000, 1184 },
+	{ 194000, 1188 },
+	{ 196000, 1192 },
+	{ 198000, 1196 },
+	{ 200000, 1200 },
+	{ 202000, 1204 },
+	{ 204000, 1208 },
+	{ 206000, 1212 },
+	{ 208000, 1216 },
+	{ 210000, 1219 }
+};
+
+static int qcom_vadc_map_voltage_temp(const struct vadc_map_pt *pts,
+						u32 tablesize, s32 input, int *output);
+static int qcom_adc5_gen3_scale_hw_calib_batt_id_voltage_100(
+				const struct vadc_prescale_ratio *prescale,
+				const struct adc5_data *data,
+				u16 adc_code, int *result_mdec)
+{
+	s64 resistance = 0;
+	int ret;
+	int result = 0;
+
+	if (adc_code >= RATIO_MAX_ADC7)
+		return -EINVAL;
+
+	/* (ADC code * R_PULLUP (100Kohm)) / (full_scale_code - ADC code)*/
+	resistance = (s64) adc_code * R_PU_100K;
+	resistance = div64_s64(resistance, (RATIO_MAX_ADC7 - adc_code));
+	ret = qcom_vadc_map_voltage_temp(adcmap_battid_register_to_vol_100k,
+			ARRAY_SIZE(adcmap_battid_register_to_vol_100k),
+			resistance, &result);
+	if (ret)
+		return ret;
+
+	/* change mv to uv */
+	result = result * 1000;
+
+	*result_mdec = result;
+
+	return 0;
+}
+#endif
+
 static int qcom_vadc_scale_hw_calib_volt(
 				const struct vadc_prescale_ratio *prescale,
 				const struct adc5_data *data,
@@ -695,6 +754,9 @@ static struct qcom_adc5_scale_type scale_adc5_fn[] = {
 	[SCALE_HW_CALIB_PM5_GEN3_USB_IN_I] = {qcom_adc5_gen3_scale_hw_calib_usb_in_current},
 	[SCALE_HW_CALIB_PM7_SMB_TEMP] = {qcom_vadc_scale_hw_pm7_smb_temp},
 	[SCALE_HW_CALIB_PM7_CHG_TEMP] = {qcom_vadc_scale_hw_pm7_chg_temp},
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	[SCALE_HW_CALIB_PM5_GEN3_BATT_ID_VOLTAGE_100K] = {qcom_adc5_gen3_scale_hw_calib_batt_id_voltage_100},
+#endif
 };
 
 static int qcom_vadc_map_voltage_temp(const struct vadc_map_pt *pts,

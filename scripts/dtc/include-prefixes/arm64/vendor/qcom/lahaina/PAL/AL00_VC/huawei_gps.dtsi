@@ -1,0 +1,3 @@
+&hisi_bfgx {
+	hi110x,gpio_timesync = <&extgpio 1 0>;                /*P01*/
+};

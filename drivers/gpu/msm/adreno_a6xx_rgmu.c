@@ -115,6 +115,7 @@ static irqreturn_t a6xx_oob_irq_handler(int irq, void *data)
 
 		dev_err_ratelimited(&rgmu->pdev->dev,
 				"RGMU oob irq error\n");
+		report_gpu_dmd_inirq(ADRENO_GMU_FAULT, "a6xx_oob_irq_handler2");
 		adreno_set_gpu_fault(adreno_dev, ADRENO_GMU_FAULT);
 		adreno_dispatcher_schedule(device);
 	}

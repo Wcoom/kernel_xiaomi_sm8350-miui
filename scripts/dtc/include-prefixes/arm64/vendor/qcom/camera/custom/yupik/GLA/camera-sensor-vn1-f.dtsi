@@ -1,0 +1,9 @@
+#include "camera-sensor-v4-c.dtsi"
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+/* rear wide senosr */
+	qcom,cam-sensor6 {
+		cam_mixed4-supply = <0>; /* del dvdd pm7325 l8 */
+	};
+};

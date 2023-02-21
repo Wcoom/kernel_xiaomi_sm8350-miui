@@ -374,6 +374,10 @@ void kgsl_process_init_debugfs(struct kgsl_process_private *private)
 			"Unable to create 'mem' file for %s\n", name);
 }
 
+#ifdef CONFIG_DFX_MEMCHECK_EXT
+#include "memtrace_gpumeminfo.c"
+#endif
+
 void kgsl_core_debugfs_init(void)
 {
 	struct dentry *debug_dir;
@@ -388,6 +392,11 @@ void kgsl_core_debugfs_init(void)
 		&_strict_fops);
 
 	proc_d_debugfs = debugfs_create_dir("proc", kgsl_debugfs_dir);
+
+#ifdef CONFIG_DFX_MEMCHECK_EXT
+	proc_create_data("gpumem_process_info", S_IRUGO, NULL,
+			 &gpumem_process_info_fops, NULL);
+#endif
 }
 
 void kgsl_core_debugfs_close(void)

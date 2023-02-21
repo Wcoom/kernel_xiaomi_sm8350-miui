@@ -26,6 +26,11 @@
 #include "governor_bw_hwmon.h"
 
 #define NUM_MBPS_ZONES		10
+
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+#define MAX_VALUE_THROUGHPUT UINT_MAX
+#endif
+
 struct hwmon_node {
 	unsigned int		guard_band_mbps;
 	unsigned int		decay_rate;
@@ -41,6 +46,11 @@ struct hwmon_node {
 	unsigned int		hyst_length;
 	unsigned int		idle_mbps;
 	unsigned int		use_ab;
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+	unsigned int		current_rw_bytes;
+	unsigned int		prev_rw_bytes;
+	ktime_t			last_req_timestamp_ms;
+#endif
 	unsigned int		mbps_zones[NUM_MBPS_ZONES];
 
 	unsigned long		prev_ab;
@@ -224,6 +234,21 @@ static int __bw_hwmon_sw_sample_end(struct bw_hwmon *hwmon)
 	return wake;
 }
 
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+static unsigned int get_amount_rw_between_requests(unsigned int curr, unsigned int *last)
+{
+	unsigned int delta;
+
+	if (curr >= *last)
+		delta = curr - *last;
+	else
+		delta = MAX_VALUE_THROUGHPUT - *last + curr;
+
+	*last = curr;
+	return delta;
+}
+#endif
+
 static int __bw_hwmon_hw_sample_end(struct bw_hwmon *hwmon)
 {
 	struct devfreq *df;
@@ -241,6 +266,9 @@ static int __bw_hwmon_hw_sample_end(struct bw_hwmon *hwmon)
 	 * micro sample since the last time we called get_bytes_and_clear()
 	 */
 	bytes = hwmon->get_bytes_and_clear(hwmon);
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+	node->current_rw_bytes += bytes;
+#endif
 	mbps = bytes_to_mbps(bytes, node->sample_ms * USEC_PER_MSEC);
 	node->max_mbps = mbps;
 
@@ -789,6 +817,27 @@ static ssize_t sample_ms_show(struct device *dev,
 
 static DEVICE_ATTR_RW(sample_ms);
 
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+static ssize_t rw_bytes_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct devfreq *df = to_devfreq(dev);
+	struct hwmon_node *node = df->data;
+	unsigned int delta;
+	unsigned int delta_time;
+	unsigned int mbps;
+	ktime_t now = ktime_get();
+	delta_time = ktime_ms_delta(now, node->last_req_timestamp_ms);
+	node->last_req_timestamp_ms = now;
+	delta = get_amount_rw_between_requests(node->current_rw_bytes, &node->prev_rw_bytes);
+	mbps = bytes_to_mbps(delta, delta_time * USEC_PER_MSEC);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", mbps);
+}
+
+static DEVICE_ATTR_RO(rw_bytes);
+#endif
+
 show_attr(guard_band_mbps);
 store_attr(guard_band_mbps, 0U, 2000U);
 static DEVICE_ATTR_RW(guard_band_mbps);
@@ -849,6 +898,9 @@ static struct attribute *dev_attr[] = {
 	&dev_attr_use_ab.attr,
 	&dev_attr_mbps_zones.attr,
 	&dev_attr_throttle_adj.attr,
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+	&dev_attr_rw_bytes.attr,
+#endif
 	NULL,
 };
 
@@ -997,6 +1049,12 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 	node->use_ab = 1;
 	node->mbps_zones[0] = 0;
 	node->hw = hwmon;
+
+#ifdef CONFIG_HW_AI_SCHED_QCOM_DDR_CONTROL
+	node->current_rw_bytes = 0;
+	node->prev_rw_bytes = 0;
+	node->last_req_timestamp_ms = ktime_get();
+#endif
 
 	mutex_init(&node->mon_lock);
 	mutex_lock(&list_lock);

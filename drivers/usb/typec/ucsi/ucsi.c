@@ -13,6 +13,12 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/usb/typec_dp.h>
+#include <linux/ana_hs.h>
+#include <chipset_common/hwpower/common_module/power_event_ne.h>
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#include <huawei_platform/hwpower/common_module/power_glink.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 #include "ucsi.h"
 #include "trace.h"
@@ -35,6 +41,10 @@
  * partners that do not support USB Power Delivery, this should still work.
  */
 #define UCSI_SWAP_TIMEOUT_MS	5000
+
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static struct ucsi_connector *g_oem_con;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 static int ucsi_acknowledge_command(struct ucsi *ucsi)
 {
@@ -486,6 +496,14 @@ static void ucsi_partner_change(struct ucsi_connector *con)
 	struct ucsi *ucsi = con->ucsi;
 	enum usb_role u_role = USB_ROLE_NONE;
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	/* Do not enumerate when last adsp type is sdp */
+	if (is_dcp_ever_detected()) {
+		dev_warn(ucsi->dev, "type_status = dcp\n");
+		return;
+	}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
+
 	if (!con->partner)
 		return;
 
@@ -497,6 +515,7 @@ static void ucsi_partner_change(struct ucsi_connector *con)
 		typec_set_data_role(con->port, TYPEC_HOST);
 		break;
 	case UCSI_CONSTAT_PARTNER_TYPE_DFP:
+	case UCSI_CONSTAT_PARTNER_TYPE_DEBUG:
 		u_role = USB_ROLE_DEVICE;
 		typec_set_data_role(con->port, TYPEC_DEVICE);
 		break;
@@ -504,8 +523,10 @@ static void ucsi_partner_change(struct ucsi_connector *con)
 		break;
 	}
 
+	dev_err(ucsi->dev, "%s datarole=%d, parter_type = %d\n", __func__, u_role, UCSI_CONSTAT_PARTNER_TYPE(con->status.flags));
+
 	/* Complete pending data role swap */
-	if (!completion_done(&con->complete))
+	if (con->pend_event == PEND_DR_SWAP && !completion_done(&con->complete))
 		complete(&con->complete);
 
 	/* Only notify USB controller if partner supports USB data */
@@ -557,7 +578,7 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 		typec_set_pwr_role(con->port, role);
 
 		/* Complete pending power role swap */
-		if (!completion_done(&con->complete))
+		if (con->pend_event == PEND_PR_SWAP && !completion_done(&con->complete))
 			complete(&con->complete);
 	}
 
@@ -572,17 +593,31 @@ static void ucsi_handle_connector_change(struct work_struct *work)
 			typec_set_data_role(con->port, TYPEC_HOST);
 			break;
 		case UCSI_CONSTAT_PARTNER_TYPE_DFP:
+		case UCSI_CONSTAT_PARTNER_TYPE_DEBUG:
 			u_role = USB_ROLE_DEVICE;
 			typec_set_data_role(con->port, TYPEC_DEVICE);
+			break;
+		case UCSI_CONSTAT_PARTNER_TYPE_AUDIO:
+			/* ana headset */
+			power_event_bnc_notify(POWER_BNT_HW_USB, POWER_NE_HW_USB_HEADPHONE, NULL);
+			ana_hs_plug_handle(ANA_HS_PLUG_IN);
 			break;
 		default:
 			break;
 		}
 
-		if (con->status.flags & UCSI_CONSTAT_CONNECTED)
+		if (con->status.flags & UCSI_CONSTAT_CONNECTED) {
+			/* usb pull up */
 			ucsi_register_partner(con);
-		else
+		} else {
+			/* usb pull out */
+			if (typec_partner_get(con->partner) == TYPEC_ACCESSORY_AUDIO) {
+				power_event_bnc_notify(POWER_BNT_HW_USB, POWER_NE_HW_USB_HEADPHONE_OUT, NULL);
+				ana_hs_plug_handle(ANA_HS_PLUG_OUT);
+			}
+
 			ucsi_unregister_partner(con);
+		}
 
 		/* Only notify USB controller if partner supports USB data */
 		if (!(UCSI_CONSTAT_PARTNER_FLAGS(con->status.flags) &
@@ -717,6 +752,8 @@ static int ucsi_dr_swap(struct typec_port *port, enum typec_data_role role)
 	u64 command;
 	int ret = 0;
 
+	reinit_completion(&con->complete);
+	con->pend_event = 0;
 	mutex_lock(&con->lock);
 
 	if (!con->partner) {
@@ -737,10 +774,12 @@ static int ucsi_dr_swap(struct typec_port *port, enum typec_data_role role)
 	ret = ucsi_role_cmd(con, command);
 	if (ret < 0)
 		goto out_unlock;
-
+	con->pend_event = PEND_DR_SWAP;
+	mutex_unlock(&con->lock);
 	if (!wait_for_completion_timeout(&con->complete,
 					msecs_to_jiffies(UCSI_SWAP_TIMEOUT_MS)))
-		ret = -ETIMEDOUT;
+		return -ETIMEDOUT;
+	return 0;
 
 out_unlock:
 	mutex_unlock(&con->lock);
@@ -754,7 +793,8 @@ static int ucsi_pr_swap(struct typec_port *port, enum typec_role role)
 	enum typec_role cur_role;
 	u64 command;
 	int ret = 0;
-
+	reinit_completion(&con->complete);
+	con->pend_event = 0;
 	mutex_lock(&con->lock);
 
 	if (!con->partner) {
@@ -773,12 +813,13 @@ static int ucsi_pr_swap(struct typec_port *port, enum typec_role role)
 	ret = ucsi_role_cmd(con, command);
 	if (ret < 0)
 		goto out_unlock;
-
+	con->pend_event = PEND_PR_SWAP;
+	mutex_unlock(&con->lock);
 	if (!wait_for_completion_timeout(&con->complete,
-				msecs_to_jiffies(UCSI_SWAP_TIMEOUT_MS))) {
-		ret = -ETIMEDOUT;
-		goto out_unlock;
-	}
+				msecs_to_jiffies(UCSI_SWAP_TIMEOUT_MS)))
+		return -ETIMEDOUT;
+
+	mutex_lock(&con->lock);
 
 	/* Something has gone wrong while swapping the role */
 	if (UCSI_CONSTAT_PWR_OPMODE(con->status.flags) !=
@@ -797,6 +838,64 @@ static const struct typec_operations ucsi_ops = {
 	.dr_set = ucsi_dr_swap,
 	.pr_set = ucsi_pr_swap
 };
+
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static int ucsi_oem_dr_swap(int role)
+{
+	struct ucsi_connector *con = g_oem_con;
+
+	if (!con || !con->port)
+		return -EIO;
+
+	return ucsi_dr_swap(con->port, role);
+}
+
+static int ucsi_oem_set_usb_con(int role)
+{
+	struct ucsi_connector *con = g_oem_con;
+	enum usb_role cur_role;
+
+	if (!con)
+		return -EIO;
+
+	cur_role = usb_role_switch_get_role(con->ucsi->usb_role_sw);
+	dev_info(con->ucsi->dev, "set usb role from %d to %d\n", cur_role, role);
+	if (role == cur_role) {
+		dev_info(con->ucsi->dev, "same role, return\n");
+		return 0;
+	}
+
+	if (role == USB_ROLE_NONE)
+		cur_role = USB_ROLE_NONE;
+	else if (role == USB_ROLE_HOST)
+		cur_role = USB_ROLE_HOST;
+	else if (role == USB_ROLE_DEVICE)
+		cur_role = USB_ROLE_DEVICE;
+	else
+		return -EINVAL;
+
+	return usb_role_switch_set_role(con->ucsi->usb_role_sw, cur_role);
+}
+
+static int ucsi_oem_get_usb_con(void)
+{
+	struct ucsi_connector *con = g_oem_con;
+	enum usb_role cur_role;
+
+	if (!con)
+		return -EIO;
+	cur_role = usb_role_switch_get_role(con->ucsi->usb_role_sw);
+	dev_info(con->ucsi->dev, "get usb role %d\n", cur_role);
+
+	return (int)cur_role;
+}
+
+static struct pd_ucsi_ops hwpd_ops = {
+	.dr_swap_set = ucsi_oem_dr_swap,
+	.set_usb_con = ucsi_oem_set_usb_con,
+	.get_usb_con = ucsi_oem_get_usb_con,
+};
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 static struct fwnode_handle *ucsi_find_fwnode(struct ucsi_connector *con)
 {
@@ -887,6 +986,7 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 		typec_set_data_role(con->port, TYPEC_HOST);
 		break;
 	case UCSI_CONSTAT_PARTNER_TYPE_DFP:
+	case UCSI_CONSTAT_PARTNER_TYPE_DEBUG:
 		role = USB_ROLE_DEVICE;
 		typec_set_data_role(con->port, TYPEC_DEVICE);
 		break;
@@ -922,6 +1022,11 @@ static int ucsi_register_port(struct ucsi *ucsi, int index)
 	}
 
 	trace_ucsi_register_port(con->num, &con->status);
+
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	g_oem_con = con;
+	pd_dpm_ucsi_ops_register(&hwpd_ops);
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	return 0;
 }

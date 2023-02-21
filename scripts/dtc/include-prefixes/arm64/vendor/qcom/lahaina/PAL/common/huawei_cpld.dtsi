@@ -1,0 +1,22 @@
+/* cpld config */
+
+&qupv3_se15_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "ok";
+	hw_cpld@51 {
+		status = "ok";
+		reg = <0x51>;
+		compatible = "huawei,cpld";
+		/* auto_key_info @ name: fw_update_type type: uint32 default: 0 */
+		fw_update_type = <1>;
+		i2c_address = <0x51>;
+		mode1_gpio = <&tlmm 6 0x00>;
+		mode2_gpio = <&tlmm 167 0x00>;
+		chip_name = "cpld_chip_name";
+		cpld_chip_name {
+			compatible = "cpld_chip_name";
+			fw_version_reg_addr = <0x03>;
+		};
+	};
+};

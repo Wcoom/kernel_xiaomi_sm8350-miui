@@ -459,7 +459,7 @@ static void wait_for_timestamp_rb(struct kgsl_device *device,
 				"Wait for global ctx=%u ts=%u type=%d error=%d\n",
 				drawctxt->base.id, drawctxt->internal_timestamp,
 				drawctxt->type, ret);
-
+		report_gpu_dmd_inirq(ADRENO_CTX_DETATCH_TIMEOUT_FAULT, "wait_for_timestamp_rb2");
 		adreno_set_gpu_fault(adreno_dev,
 				ADRENO_CTX_DETATCH_TIMEOUT_FAULT);
 		mutex_unlock(&device->mutex);

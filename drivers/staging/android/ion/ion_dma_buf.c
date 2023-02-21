@@ -152,6 +152,11 @@ static void ion_dma_buf_release(struct dma_buf *dmabuf)
 	struct ion_buffer *buffer = dmabuf->priv;
 	struct ion_heap *heap = buffer->heap;
 
+	if (dmabuf->exp_name) {
+		kfree_const(dmabuf->exp_name);
+		dmabuf->exp_name = NULL;
+	}
+
 	if (heap->buf_ops.release)
 		return heap->buf_ops.release(dmabuf);
 
@@ -362,6 +367,8 @@ struct dma_buf *ion_dmabuf_alloc(struct ion_device *dev, size_t len,
 	struct ion_buffer *buffer;
 	DEFINE_DMA_BUF_EXPORT_INFO(exp_info);
 	struct dma_buf *dmabuf;
+	char task_comm[TASK_COMM_LEN];
+	char thread_comm[TASK_COMM_LEN];
 
 	pr_debug("%s: len %zu heap_id_mask %u flags %x\n", __func__,
 		 len, heap_id_mask, flags);
@@ -370,14 +377,38 @@ struct dma_buf *ion_dmabuf_alloc(struct ion_device *dev, size_t len,
 	if (IS_ERR(buffer))
 		return ERR_CAST(buffer);
 
+	get_task_comm(task_comm, current->group_leader);
+	get_task_comm(thread_comm, current);
+
 	exp_info.ops = &dma_buf_ops;
 	exp_info.size = buffer->size;
 	exp_info.flags = O_RDWR;
 	exp_info.priv = buffer;
+	exp_info.exp_name = kasprintf(GFP_KERNEL, "%s-%s", task_comm, thread_comm);
 
 	dmabuf = dma_buf_export(&exp_info);
-	if (IS_ERR(dmabuf))
+	if (IS_ERR(dmabuf)) {
 		ion_buffer_destroy(dev, buffer);
+		if (exp_info.exp_name) {
+			kfree_const(exp_info.exp_name);
+			exp_info.exp_name = NULL;
+		}
+	}
 
 	return dmabuf;
+}
+
+/*
+ * is_ion_dma_buf - check if the dmabuf is coherent with a ION buffer
+ * @dmabuf: dma_buf structure
+ * Returns:
+ *   1- when dma_buf is coherent with a ION buffer
+ *   0- when dma_buf is not coherent with a ION buffer
+ */
+
+bool is_ion_dma_buf(struct dma_buf *dmabuf)
+{
+	if (dmabuf && dmabuf->ops && dmabuf->ops == &dma_buf_ops)
+		return true;
+	return false;
 }

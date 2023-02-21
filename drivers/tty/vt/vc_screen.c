@@ -477,6 +477,11 @@ vcs_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 		goto unlock_out;
 
 	size = vcs_size(inode);
+	if (size < 0) {
+		ret = size;
+		goto unlock_out;
+	}
+
 	ret = -EINVAL;
 	if (pos < 0 || pos > size)
 		goto unlock_out;

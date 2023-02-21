@@ -1,0 +1,42 @@
+/dts-v1/;
+/plugin/;
+
+#include "../common/common.dtsi"
+#include "huawei_wifi.dtsi"
+#include "huawei-bt.dtsi"
+/ {
+    /* bsp_replace_info @ model = "Huawei Technologies, Inc. %product_name%"; */
+    model = "Huawei Technologies, Inc. GOT-AL09";
+    compatible = "qcom,lahaina-qrd", "qcom,lahaina", "qcom,qrd";
+    /* bsp_replace_info @ qcom,board-id = <%boardid% 0>; */
+    qcom,board-id = <8100 0>;
+};
+
+&rootparam {
+    /* bsp_replace_info @ qcom,boardid = <%boardid_split%>; */
+    /* auto_key_info @ name: boardid type: uint32 default: 0 */
+    qcom,boardid = <8 1 0 0>;
+    /* bsp_replace_info @ qcom,board_name = "%board_name%"; */
+    qcom,board_name = "GOT_AL09_VA";
+    /* bsp_replace_info @ qcom,product_name = "%product_name%"; */
+    qcom,product_name = "GOT_BID1100";
+    /* bsp_replace_info @ hardware_version = "%hardware_version%"; */
+    hardware_version = "SH1GTHELM";
+    /* bsp_replace_info @ huawei,modem_id = <%modem_id% 0x0>; */
+    huawei,modem_id = <1100 0>;
+};
+
+&antenna_board_detect {
+	compatible = "huawei,antenna_board_detect";
+	pinctrl-names = "default", "idle";
+	pinctrl-0 = <&ant_boardid_gpio_det_default>;
+	pinctrl-1 = <&ant_boardid_gpio_det_idle>;
+	gpio_count = <1>;
+	board_version = <0>;
+	gpios = <&tlmm 188 0>;
+	status = "okay";
+};
+
+&huawei_batt_info {
+	shield_ct_sign = <1>;
+};

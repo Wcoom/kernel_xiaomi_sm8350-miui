@@ -1268,7 +1268,7 @@ void usb_disable_device(struct usb_device *dev, int skip_ep0)
 			interface = dev->actconfig->interface[i];
 			if (!device_is_registered(&interface->dev))
 				continue;
-			dev_dbg(&dev->dev, "unregistering interface %s\n",
+			dev_info(&dev->dev, "unregistering interface %s\n",
 				dev_name(&interface->dev));
 			remove_intf_ep_devs(interface);
 			device_del(&interface->dev);
@@ -1291,7 +1291,7 @@ void usb_disable_device(struct usb_device *dev, int skip_ep0)
 			usb_set_device_state(dev, USB_STATE_ADDRESS);
 	}
 
-	dev_dbg(&dev->dev, "%s nuking %s URBs\n", __func__,
+	dev_info(&dev->dev, "%s nuking %s URBs\n", __func__,
 		skip_ep0 ? "non-ep0" : "all");
 
 	usb_disable_device_endpoints(dev, skip_ep0);

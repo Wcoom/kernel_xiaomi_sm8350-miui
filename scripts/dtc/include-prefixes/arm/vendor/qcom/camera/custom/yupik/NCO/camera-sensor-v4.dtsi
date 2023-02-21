@@ -1,0 +1,208 @@
+#include "camera-sensor-base.dtsi"
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		gpios-shared-pinctrl = <354 336 361 338 415>; /* 7315gpio offset is 336 */
+		shared-pctrl-gpio-names = "mcam_avdd", "mcam_iovdd", "mcam_dvdd", "mcam_afvdd", "mcam_avdd2v85";
+		pinctrl-names = "mcam_avdd_active", "mcam_avdd_suspend",
+			"mcam_iovdd_active", "mcam_iovdd_suspend",
+			"mcam_dvdd_active", "mcam_dvdd_suspend",
+			"mcam_afvdd_active", "mcam_afvdd_suspend",
+			"mcam_avdd2v85_active", "mcam_avdd2v85_suspend";
+		pinctrl-0 = <&mcam_avdd_active>;
+		pinctrl-1 = <&mcam_avdd_suspend>;
+		pinctrl-2 = <&mcam_iovdd_active>;
+		pinctrl-3 = <&mcam_iovdd_suspend>;
+		pinctrl-4 = <&mcam_dvdd_active>;
+		pinctrl-5 = <&mcam_dvdd_suspend>;
+		pinctrl-6 = <&mcam_afvdd_active>;
+		pinctrl-7 = <&mcam_afvdd_suspend>;
+		pinctrl-8 = <&mcam_avdd2v85_active>;
+		pinctrl-9 = <&mcam_avdd2v85_suspend>;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	mcam_avdd2v85_active: mcam_avdd2v85_active {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio79";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio79";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	mcam_avdd2v85_suspend: mcam_avdd2v85_suspend {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio79";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio79";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front main senosr */
+	qcom,cam-sensor1 {
+		sensor-mixed-pin = <0>;
+		cam_mixed3-supply = <0>; /* no use */
+		cam_vio-supply = <&pm8350c_l8>; /* iovdd pm8350c l8 1.8v */
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_clk";
+		rgltr-min-voltage = <1800000 0>;
+		rgltr-max-voltage = <1850000 0>;
+		rgltr-load-current = <40000 0>; /* value? */
+		gpios = <&tlmm 64 0>, /* mclk0 gpio 64 */
+			<&tlmm 20 0>, /* reset0 gpio 20 */
+			<&tlmm 138 0>, /* ponv gpio 138 */
+			<&tlmm 25 0>, /*mcam_dvdd gpio 25 1.167v */
+			<&tlmm 79 0>; /*mcam_avdd2v85 gpio 79 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0",
+					"CAM_RESET0",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3";
+	};
+
+	/* front swing senosr */
+	qcom,cam-sensor6 {
+		sensor-mixed-pin = <0>;
+		cam_mixed3-supply = <0>; /* no use */
+		cam_vio-supply = <&pm8350c_l8>; /* iovdd pm8350c l8 1.8v */
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vio", "cam_clk";
+		rgltr-min-voltage = <1800000 0>;
+		rgltr-max-voltage = <1850000 0>;
+		rgltr-load-current = <40000 0>; /* value? */
+		gpios = <&tlmm 64 0>, /* mclk0 gpio 64 */
+			<&tlmm 20 0>, /* reset0 gpio 20 */
+			<&tlmm 138 0>, /* ponv gpio 138 */
+			<&tlmm 25 0>, /*mcam_dvdd gpio 25 1.167v */
+			<&tlmm 79 0>; /*mcam_avdd2v85 gpio 79 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0",
+					"CAM_RESET0",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3";
+	};
+
+	/* rear wide senosr */
+	qcom,cam-sensor2 {
+		sensor-mixed-pin = <0>;
+		cam_mixed3-supply = <0>; /* no use */
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11*/
+		cam_vdig-supply = <&pm7325_l8>; /* dvdd pm7325 l8*/
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vaf", "cam_vdig", "cam_clk";
+		rgltr-min-voltage = <3100000 1210000 0>;
+		rgltr-max-voltage = <3150000 1220000 0>;
+		rgltr-load-current = <0 200000 0>; /* value? */
+		gpios = <&tlmm 67 0>, /* mclk3 gpio 67 */
+			<&tlmm 78 0>, /* reset3 gpio 78 */
+			<&tlmm 0 0>, /* mcam_iovdd gpio 0 1.8v */
+			<&tlmm 2 0>, /* mcam_afvdd gpio 2 */
+			<&tlmm 79 0>; /*mcam_avdd2v85 gpio 79 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK3",
+					"CAM_RESET3",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3";
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear main senosr */
+	qcom,cam-sensor0 {
+		sensor-mixed-pin = <0>;
+		cam_mixed5-supply = <0>; /* no use */
+		cam_vaf-supply = <&pm8350c_l11>; /* afvdd pm8350c l11 3.1v */
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_vaf", "cam_clk";
+		rgltr-min-voltage = <3100000 0>;
+		rgltr-max-voltage = <3150000 0>;
+		rgltr-load-current = <0 0>; /* value? */
+		gpios = <&tlmm 66 0>, /* mclk2 gpio 66 */
+			<&tlmm 77 0>, /* reset2 gpio 77 */
+			<&tlmm 18 0>, /*rear_mcam_avdd 1.8v gpio 18 */
+			<&tlmm 0 0>,  /*mcam_iovdd gpio 0 */
+			<&tlmm 25 0>, /*mcam_dvdd gpio 25 */
+			<&tlmm 2 0>, /* mcam_afvdd gpio 2 */
+			<&tlmm 79 0>; /*mcam_avdd2v85 gpio 79 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-mixed4 = <5>;
+		gpio-mixed5 = <6>;
+		gpio-req-tbl-num = <0 1 2 3 4 5 6>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK2",
+					"CAM_RESET2",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3",
+					"CAM_MIXED4",
+					"CAM_MIXED5";
+	};
+
+	/* rear depth senosr */
+	qcom,cam-sensor3 {
+		sensor-mixed-pin = <0>;
+		cam_mixed2-supply = <0>; /* no use */
+		cam_clk-supply = <&cam_cc_titan_top_gdsc>;
+		regulator-names = "cam_clk";
+		rgltr-min-voltage = <0>;
+		rgltr-max-voltage = <0>;
+		rgltr-load-current = <0>;
+		gpios = <&tlmm 65 0>, /* mclk1 gpio 65 */
+			<&tlmm 68 0>, /* reset4 gpio 68 */
+			<&tlmm 3 0>, /* pwdn4 gpio 3 */
+			<&tlmm 0 0>, /* mcam_iovdd gpio 0 1.8v */
+			<&tlmm 79 0>; /*mcam_avdd2v85 gpio 79 */
+		gpio-reset = <1>;
+		gpio-custom1 = <2>;
+		gpio-mixed1 = <3>;
+		gpio-mixed2 = <4>;
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET4",
+					"CAM_PWDN4",
+					"CAM_MIXED1",
+					"CAM_MIXED2";
+	};
+};

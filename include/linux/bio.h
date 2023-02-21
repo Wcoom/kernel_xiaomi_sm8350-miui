@@ -412,6 +412,7 @@ static inline struct bio *bio_kmalloc(gfp_t gfp_mask, unsigned int nr_iovecs)
 }
 
 extern blk_qc_t submit_bio(struct bio *);
+extern blk_qc_t submit_bio_async(struct bio *);
 
 extern void bio_endio(struct bio *);
 
@@ -643,6 +644,35 @@ static inline void bio_list_merge(struct bio_list *bl, struct bio_list *bl2)
 
 	bl->tail = bl2->tail;
 }
+
+/*
+ * be careful using bio_list_insert !!!
+ * especially when pre == bl->head.
+ */
+#ifdef CONFIG_MAS_UNISTORE_PRESERVE
+static inline void bio_list_insert(struct bio_list *bl, struct bio *pre,
+		struct bio *bio)
+{
+	struct bio * bi;
+
+	bio_list_for_each(bi, bl)
+		if (pre == bi)
+			break;
+
+	if (pre != bi)
+		return;
+
+	if (!bl->tail) {
+		bio_list_add_head(bl, bio);
+		return;
+	} else {
+		bio->bi_next = pre->bi_next;
+		pre->bi_next = bio;
+		if (pre == bl->tail)
+			bl->tail = bio;
+	}
+}
+#endif
 
 static inline void bio_list_merge_head(struct bio_list *bl,
 				       struct bio_list *bl2)

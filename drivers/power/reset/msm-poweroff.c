@@ -28,6 +28,9 @@
 #include <soc/qcom/watchdog.h>
 #include <soc/qcom/minidump.h>
 
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
+
 #define EMERGENCY_DLOAD_MAGIC1    0x322A4F99
 #define EMERGENCY_DLOAD_MAGIC2    0xC67E4350
 #define EMERGENCY_DLOAD_MAGIC3    0x77777777
@@ -138,6 +141,9 @@ static int panic_prep_restart(struct notifier_block *this,
 static struct notifier_block panic_blk = {
 	.notifier_call	= panic_prep_restart,
 };
+
+DEFINE_TRACE(rb_mreason_set);
+DEFINE_TRACE(rb_sreason_set);
 
 static void set_dload_mode(int on)
 {
@@ -411,6 +417,20 @@ static void msm_restart_prepare(const char *cmd)
 	set_dload_mode(download_mode &&
 			(in_panic || restart_mode == RESTART_DLOAD));
 
+	/* If bootfail rb_mreason_set(RB_M_BOOTFAIL)
+	 * else other !panic rb_mreason_set(RB_M_NORMAL)
+	 * rb_mreason_set just set once
+	 */
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+	if ((cmd != NULL && cmd[0] != '\0') && (!strcmp(cmd, "bootfail"))) {
+		trace_rb_mreason_set(RB_M_BOOTFAIL);
+		trace_rb_sreason_set("upper bootfail");
+	}
+#endif
+
+	if (!in_panic)
+		trace_rb_mreason_set(RB_M_NORMAL);
+
 	if (qpnp_pon_check_hard_reset_stored()) {
 		/* Set warm reset as true when device is in dload mode */
 		if (get_dload_mode() ||
@@ -421,6 +441,13 @@ static void msm_restart_prepare(const char *cmd)
 		need_warm_reset = (get_dload_mode() ||
 				(cmd != NULL && cmd[0] != '\0'));
 	}
+
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+	if ((cmd != NULL && cmd[0] != '\0') && (!strcmp(cmd, "bootfail")))
+		need_warm_reset = true;
+
+	pr_info("Reset Type : %s\n", need_warm_reset ? "warm" : "cold");
+#endif
 
 	if (force_warm_reboot)
 		pr_info("Forcing a warm reset of the system\n");
@@ -512,6 +539,9 @@ static int do_msm_restart(struct notifier_block *unused, unsigned long action,
 static void do_msm_poweroff(void)
 {
 	pr_notice("Powering off the SoC\n");
+
+	if (!in_panic)
+		trace_rb_mreason_set(RB_M_NORMAL);
 
 	set_dload_mode(0);
 	qpnp_pon_system_pwr_off(PON_POWER_OFF_SHUTDOWN);
@@ -610,5 +640,9 @@ static __exit void msm_restart_exit(void)
 }
 module_exit(msm_restart_exit);
 
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_mreason_set);
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_sreason_set);
+
 MODULE_DESCRIPTION("MSM Poweroff Driver");
 MODULE_LICENSE("GPL v2");
+

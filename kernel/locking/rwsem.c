@@ -33,6 +33,7 @@
 
 #include <trace/hooks/dtask.h>
 #include <trace/hooks/rwsem.h>
+#include <platform/trace/hooks/hungtask.h>
 
 /*
  * The least significant 3 bits of the owner value has the following
@@ -125,7 +126,8 @@
  * Bit  0    - writer locked bit
  * Bit  1    - waiters present bit
  * Bit  2    - lock handoff bit
- * Bits 3-7  - reserved
+ * Bits 3-6  - reserved
+ * Bit  7    - vip bit
  * Bits 8-62 - 55-bit reader count
  * Bit  63   - read fail bit
  *
@@ -158,6 +160,9 @@
 #define RWSEM_WRITER_LOCKED	(1UL << 0)
 #define RWSEM_FLAG_WAITERS	(1UL << 1)
 #define RWSEM_FLAG_HANDOFF	(1UL << 2)
+#ifdef CONFIG_HW_VIP_SEMAPHORE
+#define RWSEM_FLAG_VIP		(1UL << 7)
+#endif
 #define RWSEM_FLAG_READFAIL	(1UL << (BITS_PER_LONG - 1))
 
 #define RWSEM_READER_SHIFT	8
@@ -233,6 +238,32 @@ static inline bool is_rwsem_reader_owned(struct rw_semaphore *sem)
 #endif
 	return rwsem_test_oflags(sem, RWSEM_READER_OWNED);
 }
+
+#ifdef CONFIG_HW_VIP_SEMAPHORE
+/*
+ * Return true if the rwsem is vip.
+ */
+bool is_rwsem_vip(struct rw_semaphore *sem)
+{
+	return atomic_long_read(&sem->count) & RWSEM_FLAG_VIP;
+}
+EXPORT_SYMBOL(is_rwsem_vip);
+
+/*
+ * Set the rwsem to vip.
+ */
+void rwsem_set_vip(struct rw_semaphore *sem)
+{
+	unsigned long count = atomic_long_read(&sem->count);
+
+	do {
+		if (count & RWSEM_FLAG_VIP)
+			break;
+	} while (!atomic_long_try_cmpxchg(&sem->count, &count,
+					  count | RWSEM_FLAG_VIP));
+}
+EXPORT_SYMBOL(rwsem_set_vip);
+#endif
 
 #ifdef CONFIG_DEBUG_RWSEMS
 /*
@@ -345,6 +376,9 @@ void __init_rwsem(struct rw_semaphore *sem, const char *name,
 	osq_lock_init(&sem->osq);
 #endif
 	trace_android_vh_rwsem_init(sem);
+#ifdef CONFIG_HW_VIP_THREAD
+	sem->vip_dep_task = NULL;
+#endif
 }
 EXPORT_SYMBOL(__init_rwsem);
 
@@ -1003,6 +1037,10 @@ rwsem_down_read_slowpath(struct rw_semaphore *sem, int state)
 	DEFINE_WAKE_Q(wake_q);
 	bool wake = false;
 	bool already_on_list = false;
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	unsigned long task_flags;
+	struct task_struct *sem_owner = NULL;
+#endif
 
 	/*
 	 * Save the current read-owner of rwsem, if available, and the
@@ -1068,7 +1106,11 @@ queue:
 					&waiter,
 					sem, &already_on_list);
 	if (!already_on_list)
+#ifdef CONFIG_HW_VIP_THREAD
+		rwsem_list_add(current, &waiter.list, &sem->wait_list);
+#else
 		list_add_tail(&waiter.list, &sem->wait_list);
+#endif
 
 	/* we're now waiting on the lock, but no longer actively locking */
 	if (adjustment)
@@ -1089,6 +1131,18 @@ queue:
 	if (wake || (!(count & RWSEM_WRITER_MASK) &&
 		    (adjustment & RWSEM_FLAG_WAITERS)))
 		rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
+
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	sem_owner = rwsem_owner_flags(sem, &task_flags);
+	if (sem_owner && !task_flags && !need_resched()) {
+#ifdef CONFIG_HW_VIP_THREAD
+		rwsem_dynamic_vip_enqueue(current, waiter.task, sem_owner, sem);
+#endif // CONFIG_HW_VIP_THREAD
+#ifdef CONFIG_HW_QOS_THREAD
+		rwsem_dynamic_qos_enqueue(sem_owner, waiter.task);
+#endif // CONFIG_HW_QOS_THREAD
+	}
+#endif // defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
 
 	trace_android_vh_rwsem_wake(sem);
 	raw_spin_unlock_irq(&sem->wait_lock);
@@ -1148,9 +1202,14 @@ static inline void rwsem_disable_reader_optspin(struct rw_semaphore *sem,
 /*
  * Wait until we successfully acquire the write lock
  */
-static struct rw_semaphore *
+static struct rw_semaphore __sched *
 rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 {
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	unsigned long task_flags;
+	struct task_struct *sem_owner = NULL;
+#endif
+
 	long count;
 	bool disable_rspin;
 	enum writer_wait_state wstate;
@@ -1190,7 +1249,11 @@ rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 					&waiter,
 					sem, &already_on_list);
 	if (!already_on_list)
+#ifdef CONFIG_HW_VIP_THREAD
+		rwsem_list_add(current, &waiter.list, &sem->wait_list);
+#else
 		list_add_tail(&waiter.list, &sem->wait_list);
+#endif
 
 	/* we're now waiting on the lock */
 	if (wstate == WRITER_NOT_FIRST) {
@@ -1224,6 +1287,17 @@ rwsem_down_write_slowpath(struct rw_semaphore *sem, int state)
 	} else {
 		atomic_long_or(RWSEM_FLAG_WAITERS, &sem->count);
 	}
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	sem_owner = rwsem_owner_flags(sem, &task_flags);
+	if (sem_owner && !task_flags && !need_resched()) {
+#ifdef CONFIG_HW_VIP_THREAD
+		rwsem_dynamic_vip_enqueue(waiter.task, current, sem_owner, sem);
+#endif // CONFIG_HW_VIP_THREAD
+#ifdef CONFIG_HW_QOS_THREAD
+		rwsem_dynamic_qos_enqueue(sem_owner, waiter.task);
+#endif // CONFIG_HW_QOS_THREAD
+	}
+#endif // defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
 
 wait:
 	trace_android_vh_rwsem_wake(sem);
@@ -1329,6 +1403,14 @@ static struct rw_semaphore *rwsem_wake(struct rw_semaphore *sem, long count)
 
 	if (!list_empty(&sem->wait_list))
 		rwsem_mark_wake(sem, RWSEM_WAKE_ANY, &wake_q);
+
+#ifdef CONFIG_HW_VIP_THREAD
+	rwsem_dynamic_vip_dequeue(sem, current);
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+	rwsem_dynamic_qos_dequeue(current);
+#endif
 
 	raw_spin_unlock_irqrestore(&sem->wait_lock, flags);
 	wake_up_q(&wake_q);
@@ -1513,23 +1595,43 @@ static inline void __downgrade_write(struct rw_semaphore *sem)
  */
 void __sched down_read(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
+
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
 	LOCK_CONTENDED(sem, __down_read_trylock, __down_read);
+
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	clear_remote_mm();
+	trace_mmap_sem_debug(sem);
+#endif
 }
 EXPORT_SYMBOL(down_read);
 
 int __sched down_read_killable(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
+
 	might_sleep();
 	rwsem_acquire_read(&sem->dep_map, 0, 0, _RET_IP_);
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_read_trylock, __down_read_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+                clear_remote_mm();
+#endif
 		return -EINTR;
 	}
 
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	clear_remote_mm();
+	trace_mmap_sem_debug(sem);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(down_read_killable);
@@ -1552,9 +1654,17 @@ EXPORT_SYMBOL(down_read_trylock);
  */
 void __sched down_write(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+        set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 	LOCK_CONTENDED(sem, __down_write_trylock, __down_write);
+
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	clear_remote_mm();
+	trace_mmap_sem_debug(sem);
+#endif
 }
 EXPORT_SYMBOL(down_write);
 
@@ -1563,15 +1673,25 @@ EXPORT_SYMBOL(down_write);
  */
 int __sched down_write_killable(struct rw_semaphore *sem)
 {
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	set_remote_mm(container_of(sem, struct mm_struct, mmap_sem));
+#endif
 	might_sleep();
 	rwsem_acquire(&sem->dep_map, 0, 0, _RET_IP_);
 
 	if (LOCK_CONTENDED_RETURN(sem, __down_write_trylock,
 				  __down_write_killable)) {
 		rwsem_release(&sem->dep_map, 1, _RET_IP_);
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+                clear_remote_mm();
+#endif
 		return -EINTR;
 	}
 
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM_DBG
+	clear_remote_mm();
+	trace_mmap_sem_debug(sem);
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(down_write_killable);

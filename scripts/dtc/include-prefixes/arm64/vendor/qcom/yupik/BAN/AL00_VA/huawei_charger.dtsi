@@ -1,0 +1,7 @@
+&direct_charge_comp {
+	compensation_mode = <3>;
+};
+
+&direct_charger_sc {
+	delta_err = <200>;
+};

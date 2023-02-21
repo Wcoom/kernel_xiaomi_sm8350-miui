@@ -32,10 +32,15 @@
 #include <linux/show_mem_notifier.h>
 #include <trace/events/cma.h>
 
+#ifdef CONFIG_FCMA
+#include <linux/fcma.h>
+#endif
+
 #include "cma.h"
 
 struct cma cma_areas[MAX_CMA_AREAS];
-unsigned cma_area_count;
+unsigned int cma_area_count;
+static atomic_long_t cma_used_count = ATOMIC_INIT(0);
 
 phys_addr_t cma_get_base(const struct cma *cma)
 {
@@ -117,7 +122,7 @@ static struct notifier_block cma_nb = {
 static void __init cma_activate_area(struct cma *cma)
 {
 	unsigned long base_pfn = cma->base_pfn, pfn = base_pfn;
-	unsigned i = cma->count >> pageblock_order;
+	unsigned int i = cma->count >> pageblock_order;
 	struct zone *zone;
 
 	cma->bitmap = bitmap_zalloc(cma_bitmap_maxno(cma), GFP_KERNEL);
@@ -128,7 +133,7 @@ static void __init cma_activate_area(struct cma *cma)
 	zone = page_zone(pfn_to_page(pfn));
 
 	do {
-		unsigned j;
+		unsigned int j;
 
 		base_pfn = pfn;
 		for (j = pageblock_nr_pages; j; --j, pfn++) {
@@ -142,7 +147,14 @@ static void __init cma_activate_area(struct cma *cma)
 			if (page_zone(pfn_to_page(pfn)) != zone)
 				goto not_in_zone;
 		}
+#ifdef CONFIG_FCMA
+		if (cma->is_fcma)
+			init_fcma_reserved_pageblock(pfn_to_page(base_pfn));
+		else
+			init_cma_reserved_pageblock(pfn_to_page(base_pfn));
+#else
 		init_cma_reserved_pageblock(pfn_to_page(base_pfn));
+#endif
 	} while (--i);
 
 	mutex_init(&cma->lock);
@@ -159,7 +171,6 @@ not_in_zone:
 out_error:
 	cma->count = 0;
 	pr_err("CMA area %s could not be activated\n", cma->name);
-	return;
 }
 
 static int __init cma_init_reserved_areas(void)
@@ -227,11 +238,17 @@ int __init cma_init_reserved_mem(phys_addr_t base, phys_addr_t size,
 		if (!cma->name)
 			return -ENOMEM;
 	}
+#ifdef CONFIG_FCMA
+	cma->is_fcma = false;
+#endif
 	cma->base_pfn = PFN_DOWN(base);
 	cma->count = size >> PAGE_SHIFT;
 	cma->order_per_bit = order_per_bit;
 	*res_cma = cma;
 	cma_area_count++;
+#ifdef CONFIG_FCMA
+	INIT_LIST_HEAD(&cma->list);
+#endif
 	totalcma_pages += (size / PAGE_SIZE);
 
 	return 0;
@@ -417,7 +434,9 @@ static void cma_debug_show_areas(struct cma *cma)
 	mutex_unlock(&cma->lock);
 }
 #else
-static inline void cma_debug_show_areas(struct cma *cma) { }
+static inline void cma_debug_show_areas(struct cma *cma)
+{
+}
 #endif
 
 /**
@@ -438,6 +457,9 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 	unsigned long start = 0;
 	unsigned long bitmap_maxno, bitmap_no, bitmap_count;
 	size_t i;
+#ifdef CONFIG_FCMA
+	int migratetype;
+#endif
 	struct page *page = NULL;
 	int ret = -ENOMEM;
 	int retry_after_sleep = 0;
@@ -455,6 +477,9 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 
 	trace_cma_alloc_start(count, align);
 
+#ifdef CONFIG_FCMA
+	migratetype = cma->is_fcma ? MIGRATE_FCMA : MIGRATE_CMA;
+#endif
 	mask = cma_bitmap_aligned_mask(cma, align);
 	offset = cma_bitmap_aligned_offset(cma, align);
 	bitmap_maxno = cma_bitmap_maxno(cma);
@@ -507,9 +532,17 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 		mutex_unlock(&cma->lock);
 
 		pfn = cma->base_pfn + (bitmap_no << cma->order_per_bit);
+		
+#ifdef CONFIG_FCMA
+		set_fcma_migrate_flag(migratetype);
+		ret = alloc_contig_range(pfn, pfn + count, migratetype,
+				     GFP_KERNEL | (no_warn ? __GFP_NOWARN : 0));
+		clear_fcma_migrate_flag(migratetype);
+#else
 		ret = alloc_contig_range(pfn, pfn + count, MIGRATE_CMA,
 				     GFP_KERNEL | (no_warn ? __GFP_NOWARN : 0));
-
+#endif
+		
 		if (ret == 0) {
 			page = pfn_to_page(pfn);
 			break;
@@ -528,6 +561,7 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 	}
 
 	trace_cma_alloc(pfn, page, count, align);
+	atomic_long_add(count, &cma_used_count);
 
 	/*
 	 * CMA can allocate multiple page blocks, which results in different
@@ -544,6 +578,11 @@ struct page *cma_alloc(struct cma *cma, size_t count, unsigned int align,
 			__func__, cma->name, count, ret);
 		cma_debug_show_areas(cma);
 	}
+
+#ifdef CONFIG_FCMA
+	if (page && cma->is_fcma)
+		fcma_page_num_sub(count);
+#endif
 
 	pr_debug("%s(): returned %p\n", __func__, page);
 	return page;
@@ -579,6 +618,7 @@ bool cma_release(struct cma *cma, const struct page *pages, unsigned int count)
 	free_contig_range(pfn, count);
 	cma_clear_bitmap(cma, pfn, count);
 	trace_cma_release(pfn, pages, count);
+	atomic_long_sub(count, &cma_used_count);
 
 	return true;
 }
@@ -598,3 +638,8 @@ int cma_for_each_area(int (*it)(struct cma *cma, void *data), void *data)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(cma_for_each_area);
+
+u64 cma_get_total_used(void)
+{
+	return atomic_long_read(&cma_used_count);
+}

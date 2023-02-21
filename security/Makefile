@@ -12,6 +12,9 @@ subdir-$(CONFIG_SECURITY_YAMA)		+= yama
 subdir-$(CONFIG_SECURITY_LOADPIN)	+= loadpin
 subdir-$(CONFIG_SECURITY_SAFESETID)    += safesetid
 subdir-$(CONFIG_SECURITY_LOCKDOWN_LSM)	+= lockdown
+subdir-$(CONFIG_HW_KERNEL_STP)		+= kernel_stp
+subdir-$(CONFIG_HW_ROOT_SCAN)		+= hw_root_scan
+subdir-$(CONFIG_HUAWEI_SOP)		+= sop
 
 # always enable default capabilities
 obj-y					+= commoncap.o
@@ -34,3 +37,12 @@ obj-$(CONFIG_CGROUP_DEVICE)		+= device_cgroup.o
 # Object integrity file lists
 subdir-$(CONFIG_INTEGRITY)		+= integrity
 obj-$(CONFIG_INTEGRITY)			+= integrity/
+obj-$(CONFIG_HW_KERNEL_STP)		+= kernel_stp/
+obj-$(CONFIG_HW_ROOT_SCAN)		+= hw_root_scan/
+obj-$(CONFIG_HUAWEI_SOP)		+= sop/
+
+# HW Object
+obj-$(CONFIG_HKIP_ATKINFO)		+= hkip_atkinfo/
+obj-$(CONFIG_HUAWEI_PROC_CHECK_ROOT)    += check_root/
+obj-$(CONFIG_KERNEL_HARDEN_DEBUG)       += kernel_harden_test/
+include security/kernel_harden/Makefile

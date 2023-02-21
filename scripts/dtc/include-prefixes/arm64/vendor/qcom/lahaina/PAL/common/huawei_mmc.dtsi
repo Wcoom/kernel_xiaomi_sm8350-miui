@@ -1,0 +1,7 @@
+&sdhc_2 {
+	sd-sim-gpios = <&tlmm 125 GPIO_ACTIVE_HIGH>;
+	sd-sim-mux = <1>;
+	sd-sim-boost-5v = <1>;
+
+	status = "ok";
+};

@@ -1,0 +1,43 @@
+&tlmm {
+	ak8789_default: ak8789_default {
+		mux {
+			pins = "gpio3", "gpio101";
+			function =  "gpio";
+		};
+		config {
+			pins = "gpio3", "gpio101";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};
+
+&sensor_hw_config {
+	product-name = "bah4";
+};
+
+&huawei_hall_sensor {
+	compatible = "huawei,hall-ak8789";
+	pinctrl-names = "default";
+	pinctrl-0 = <&ak8789_default>;
+	status = "ok";
+	is_support_hall_keyboard = <1>;
+	hall_keyboard_value = <0x4>; // 0100(b): hall keyboard trigger mask
+
+	huawei,hall_0 {
+		huawei,single-n-pole = <&tlmm 101 0>;
+		huawei,id = <0>;
+		huawei,type = <0x01>;
+		huawei,wakeup-flag = <0x4000>;
+		huawei,irq-type = <1>; // trigger mode(0: level 1: edge)
+		huawei,default-state = "on";
+	};
+	huawei,hall_1 {
+		huawei,single-n-pole = <&tlmm 3 0>;
+		huawei,id = <1>;
+		huawei,type = <0x01>;
+		huawei,wakeup-flag = <0x4000>;
+		huawei,irq-type = <1>; // trigger mode(0: level 1: edge)
+		huawei,default-state = "on";
+	};
+};

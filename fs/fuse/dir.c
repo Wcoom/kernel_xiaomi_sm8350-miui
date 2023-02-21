@@ -311,7 +311,7 @@ static void fuse_dentry_canonical_path(const struct path *path, struct path *can
 	char *path_name;
 	int err;
 
-	path_name = (char*)__get_free_page(GFP_KERNEL);
+	path_name = (char *)get_zeroed_page(GFP_KERNEL);
 	if (!path_name)
 		goto default_path;
 
@@ -426,6 +426,9 @@ static struct dentry *fuse_lookup(struct inode *dir, struct dentry *entry,
 	if (fuse_is_bad(dir))
 		return ERR_PTR(-EIO);
 
+	if (fuse_is_bad(dir))
+		return ERR_PTR(-EIO);
+
 	locked = fuse_lock_inode(dir);
 	err = fuse_lookup_name(dir->i_sb, get_node_id(dir), &entry->d_name,
 			       &outarg, &inode);
@@ -529,6 +532,7 @@ static int fuse_create_open(struct inode *dir, struct dentry *entry,
 	ff->fh = outopen.fh;
 	ff->nodeid = outentry.nodeid;
 	ff->open_flags = outopen.open_flags;
+	fuse_passthrough_setup(fc, ff, &outopen);
 	inode = fuse_iget(dir->i_sb, outentry.nodeid, outentry.generation,
 			  &outentry.attr, entry_attr_timeout(&outentry), 0);
 	if (!inode) {
@@ -568,6 +572,9 @@ static int fuse_atomic_open(struct inode *dir, struct dentry *entry,
 	int err;
 	struct fuse_conn *fc = get_fuse_conn(dir);
 	struct dentry *res = NULL;
+
+	if (fuse_is_bad(dir))
+		return -EIO;
 
 	if (fuse_is_bad(dir))
 		return -EIO;

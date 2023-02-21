@@ -85,7 +85,6 @@ struct mem_section;
 #ifndef CONFIG_MEMORY_HOTPLUG_SPARSE
 static inline void memory_dev_init(void)
 {
-	return;
 }
 static inline int register_memory_notifier(struct notifier_block *nb)
 {
@@ -134,7 +133,7 @@ extern int for_each_memory_block(void *arg, walk_memory_blocks_func_t func);
 	register_memory_notifier(&fn##_mem_nb);			\
 })
 #define register_hotmemory_notifier(nb)		register_memory_notifier(nb)
-#define unregister_hotmemory_notifier(nb) 	unregister_memory_notifier(nb)
+#define unregister_hotmemory_notifier(nb)	unregister_memory_notifier(nb)
 extern unsigned long get_offlined_pages_count(void);
 #else
 #define hotplug_memory_notifier(fn, pri)	({ 0; })

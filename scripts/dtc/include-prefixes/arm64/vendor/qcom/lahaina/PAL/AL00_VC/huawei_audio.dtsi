@@ -1,0 +1,5 @@
+&lahaina_snd {
+	qcom,headphone_low_power_supported = <1>;
+	qcom,headphone_low_power_gpio_switch = <1>;
+	qcom,headphone_low_power_gpio_num = <&tlmm 187 0>;
+};

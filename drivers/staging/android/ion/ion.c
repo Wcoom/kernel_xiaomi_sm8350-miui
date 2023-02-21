@@ -24,12 +24,17 @@
 #include <linux/sched/task.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-
+#include <platform/linux/memcheck.h>
 #include "ion_private.h"
 
 #define ION_CURRENT_ABI_VERSION  2
 
 static struct ion_device *internal_dev;
+
+struct ion_device *get_ion_device(void)
+{
+	return internal_dev;
+}
 
 /* Entry into ION allocator for rest of the kernel */
 struct dma_buf *ion_alloc(size_t len, unsigned int heap_id_mask,
@@ -424,6 +429,32 @@ void ion_device_remove_heap(struct ion_heap *heap)
 }
 EXPORT_SYMBOL_GPL(ion_device_remove_heap);
 
+int ion_heap_watermark_init(const char *name,
+				const struct attribute_group *watermark_attribute_group)
+{
+	int ret = 0;
+	struct ion_device *dev = internal_dev;
+	struct kobject *heap_kobj;
+
+
+	heap_kobj = kobject_create_and_add(name, dev->sysfs_root);
+	if (!heap_kobj) {
+		ret = -ENOMEM;
+		goto err_out;
+	}
+
+	ret = sysfs_create_group(heap_kobj, watermark_attribute_group);
+	if (ret) {
+		pr_err("failed to register ion group\n");
+		goto err_out;
+	}
+
+	return 0;
+
+err_out:
+	return ret;
+}
+
 static ssize_t
 total_heaps_kb_show(struct kobject *kobj, struct kobj_attribute *attr,
 		    char *buf)
@@ -463,7 +494,7 @@ static struct attribute *ion_device_attrs[] = {
 
 ATTRIBUTE_GROUPS(ion_device);
 
-static int ion_init_sysfs(void)
+static int ion_init_sysfs(struct ion_device *dev)
 {
 	struct kobject *ion_kobj;
 	int ret;
@@ -477,6 +508,7 @@ static int ion_init_sysfs(void)
 		kobject_put(ion_kobj);
 		return ret;
 	}
+	dev->sysfs_root = ion_kobj;
 
 	return 0;
 }
@@ -500,13 +532,14 @@ static int ion_device_create(void)
 		goto err_reg;
 	}
 
-	ret = ion_init_sysfs();
+	ret = ion_init_sysfs(idev);
 	if (ret) {
 		pr_err("ion: failed to add sysfs attributes.\n");
 		goto err_sysfs;
 	}
 
 	idev->debug_root = debugfs_create_dir("ion", NULL);
+	mm_ion_process_info(idev);
 	init_rwsem(&idev->lock);
 	plist_head_init(&idev->heaps);
 	internal_dev = idev;

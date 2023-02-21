@@ -1,0 +1,11 @@
+&soc {
+	ant_cable_det {
+                compatible = "huawei,antenna_cable_detect";
+                pinctrl-names = "default", "idle";
+                pinctrl-0 = <&ant_cable_det_id1_default>;
+                pinctrl-1 = <&ant_cable_det_id1_idle>;
+                gpio_count = <1>;
+                gpios = <&tlmm 123 0>;
+                debounce-interval = <15>;
+	};
+};

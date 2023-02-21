@@ -49,6 +49,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/qtee_shmbridge.h>
 #include "compat_qseecom.h"
+#include "../soc/qcom/cmdmonitor.h"
 
 #define QSEECOM_DEV			"qseecom"
 #define QSEOS_VERSION_14		0x14
@@ -468,7 +469,7 @@ static void __qseecom_free_coherent_buf(uint32_t size,
 				u8 *vaddr, phys_addr_t paddr);
 
 #define QSEECOM_SCM_EBUSY_WAIT_MS 30
-#define QSEECOM_SCM_EBUSY_MAX_RETRY 67
+#define QSEECOM_SCM_EBUSY_MAX_RETRY 167
 
 #define QSEE_RESULT_FAIL_APP_BUSY 315
 
@@ -3245,11 +3246,14 @@ static void __qseecom_processing_pending_unload_app(void)
 			mutex_unlock(&unload_app_pending_list_lock);
 			mutex_lock(&app_access_lock);
 			ret = qseecom_unload_app(entry->data, true);
-			if (ret)
-				pr_err("unload app %d pending failed %d\n",
-					entry->data->client.app_id, ret);
 			mutex_unlock(&app_access_lock);
 			mutex_lock(&unload_app_pending_list_lock);
+			if (ret) {
+				pr_err("unload app %d pending failed %d\n",
+					entry->data->client.app_id, ret);
+				if (ret == -EBUSY)
+					continue;
+			}
 			__qseecom_free_tzbuf(&entry->data->sglistinfo_shm);
 			kzfree(entry->data);
 		}
@@ -3705,6 +3709,7 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 	bool found_app = false;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
+	uint32_t ref_cnt = 0;
 
 	reqd_len_sb_in = req->cmd_req_len + req->resp_len;
 	/* find app_id & img_name from list */
@@ -3714,6 +3719,7 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 		if ((ptr_app->app_id == data->client.app_id) &&
 			 (!strcmp(ptr_app->app_name, data->client.app_name))) {
 			found_app = true;
+			ref_cnt = ptr_app->ref_cnt;
 			break;
 		}
 	}
@@ -3726,7 +3732,8 @@ static int __qseecom_send_cmd(struct qseecom_dev_handle *data,
 	}
 
 	if (__qseecom_find_pending_unload_app(data->client.app_id,
-						data->client.app_name)) {
+						data->client.app_name) &&
+						ref_cnt == 1) {
 		pr_err("app %d (%s) unload is pending\n",
 			data->client.app_id, data->client.app_name);
 		return -ENOENT;
@@ -7215,6 +7222,7 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 	int ret = 0;
 	int ret2 = 0;
 	uint32_t reqd_len_sb_in = 0;
+	uint32_t ref_cnt = 0;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
 	struct sglist_info *table = data->sglistinfo_ptr;
@@ -7235,6 +7243,7 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 		if ((ptr_app->app_id == data->client.app_id) &&
 			 (!strcmp(ptr_app->app_name, data->client.app_name))) {
 			found_app = true;
+			ref_cnt = ptr_app->ref_cnt;
 			break;
 		}
 	}
@@ -7245,7 +7254,8 @@ static int __qseecom_qteec_issue_cmd(struct qseecom_dev_handle *data,
 		return -ENOENT;
 	}
 	if (__qseecom_find_pending_unload_app(data->client.app_id,
-						data->client.app_name)) {
+						data->client.app_name) &&
+						ref_cnt == 1) {
 		pr_err("app %d (%s) unload is pending\n",
 			data->client.app_id, data->client.app_name);
 		return -ENOENT;
@@ -7412,6 +7422,7 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 	int ret = 0;
 	int i = 0;
 	uint32_t reqd_len_sb_in = 0;
+	uint32_t ref_cnt = 0;
 	void *cmd_buf = NULL;
 	size_t cmd_len;
 	struct sglist_info *table = data->sglistinfo_ptr;
@@ -7438,6 +7449,7 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 		if ((ptr_app->app_id == data->client.app_id) &&
 			 (!strcmp(ptr_app->app_name, data->client.app_name))) {
 			found_app = true;
+			ref_cnt = ptr_app->ref_cnt;
 			break;
 		}
 	}
@@ -7448,7 +7460,8 @@ static int qseecom_qteec_invoke_modfd_cmd(struct qseecom_dev_handle *data,
 		return -ENOENT;
 	}
 	if (__qseecom_find_pending_unload_app(data->client.app_id,
-						data->client.app_name)) {
+						data->client.app_name) &&
+						ref_cnt == 1) {
 		pr_err("app %d (%s) unload is pending\n",
 			data->client.app_id, data->client.app_name);
 		return -ENOENT;
@@ -7585,6 +7598,8 @@ long qseecom_ioctl(struct file *file,
 	struct qseecom_dev_handle *data = file->private_data;
 	void __user *argp = (void __user *) arg;
 	bool perf_enabled = false;
+	struct cmd_monitor *item = NULL;
+	bool monitor_flag = false;
 
 	if (!data) {
 		pr_err("Invalid/uninitialized device handle\n");
@@ -7598,10 +7613,14 @@ long qseecom_ioctl(struct file *file,
 	if (cmd != QSEECOM_IOCTL_RECEIVE_REQ &&
 		cmd != QSEECOM_IOCTL_SEND_RESP_REQ &&
 		cmd != QSEECOM_IOCTL_SEND_MODFD_RESP &&
-		cmd != QSEECOM_IOCTL_SEND_MODFD_RESP_64)
+		cmd != QSEECOM_IOCTL_SEND_MODFD_RESP_64) {
 		__wakeup_unregister_listener_kthread();
+		monitor_flag = true;
+	}
 	__wakeup_unload_app_kthread();
 
+	if (monitor_flag)
+		item = cmd_monitor_log(cmd);
 	switch (cmd) {
 	case QSEECOM_IOCTL_REGISTER_LISTENER_REQ: {
 		if (data->type != QSEECOM_GENERIC) {
@@ -8008,7 +8027,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_03) {
 			pr_err("SEND_CMD_SERVICE_REQ: Invalid qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		mutex_lock(&app_access_lock);
 		atomic_inc(&data->ioctl_count);
@@ -8029,7 +8049,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_05) {
 			pr_err("Create Key feature unsupported: qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		data->released = true;
 		mutex_lock(&app_access_lock);
@@ -8054,7 +8075,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_05) {
 			pr_err("Wipe Key feature unsupported in qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		data->released = true;
 		mutex_lock(&app_access_lock);
@@ -8078,7 +8100,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_05) {
 			pr_err("Update Key feature unsupported in qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		data->released = true;
 		mutex_lock(&app_access_lock);
@@ -8169,7 +8192,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			pr_err("GP feature unsupported: qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
@@ -8194,7 +8218,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			pr_err("GP feature unsupported: qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
@@ -8218,7 +8243,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			pr_err("GP feature unsupported: qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
@@ -8243,7 +8269,8 @@ long qseecom_ioctl(struct file *file,
 		if (qseecom.qsee_version < QSEE_VERSION_40) {
 			pr_err("GP feature unsupported: qsee ver %u\n",
 				qseecom.qsee_version);
-			return -EINVAL;
+			ret = -EINVAL;
+			break;
 		}
 		/* Only one client allowed here at a time */
 		mutex_lock(&app_access_lock);
@@ -8286,7 +8313,8 @@ long qseecom_ioctl(struct file *file,
 		ret = copy_from_user(&ice_data, argp, sizeof(ice_data));
 		if (ret) {
 			pr_err("copy_from_user failed\n");
-			return -EFAULT;
+			ret = -EFAULT;
+			break;
 		}
 		crypto_qti_ice_set_fde_flag(ice_data.flag);
 		break;
@@ -8297,7 +8325,8 @@ long qseecom_ioctl(struct file *file,
 		ret = copy_from_user(&key_data, argp, sizeof(key_data));
 		if (ret) {
 			pr_err("copy from user failed\n");
-			return -EFAULT;
+			ret = -EFAULT;
+			break;
 		}
 		pfk_fbe_clear_key((const unsigned char *) key_data.key,
 				key_data.key_len, (const unsigned char *)
@@ -8306,8 +8335,11 @@ long qseecom_ioctl(struct file *file,
 	}
 	default:
 		pr_err("Invalid IOCTL: 0x%x\n", cmd);
-		return -ENOIOCTLCMD;
+		ret = -ENOIOCTLCMD;
+		break;
 	}
+	if (monitor_flag)
+		cmd_monitor_logend(item);
 	return ret;
 }
 

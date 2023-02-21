@@ -885,6 +885,14 @@ config LEDS_QPNP_VIBRATOR_LDO
 	  peripheral found on Qualcomm Technologies, Inc. QPNP PMICs.
 	  The vibrator-ldo peripheral is capable of driving ERM vibrators.
 
+config LEDS_QPNP_VIBRATOR_GPIO
+	tristate "Vibrator-GPIO support for QPNP GPIO"
+	depends on LEDS_CLASS
+	help
+	  This option enables device driver support for the vibrator-gpio
+	  peripheral found on Qualcomm Technologies, Inc.
+	  The vibrator-GPIO peripheral is capable of driving ERM vibrators.
+
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"
 

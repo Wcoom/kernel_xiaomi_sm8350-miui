@@ -1,0 +1,253 @@
+#include "../../common/common.dtsi"
+#include <dt-bindings/iio/qcom,spmi-adc7-pm7325b.h>
+#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/iio/qcom,spmi-adc7-pm7325.h>
+#include "huawei_audio.dtsi"
+#include "huawei_tp.dtsi"
+#include "huawei_bsp.dtsi"
+#include "huawei-lcd.dtsi"
+#include "huawei_charger.dtsi"
+#include "huawei_usb.dtsi"
+#include "huawei-sensor.dtsi"
+#include "huawei_bt.dtsi"
+#include "huawei_fp.dtsi"
+#include "huawei_sd.dtsi"
+#include "huawei_fac.dtsi"
+
+&gpio_check {
+        /* 343 : GPIO7  , tlmm BASE = 336 */
+        /* 486 : GPIO150, tlmm BASE = 336 */
+        /* 487 : GPIO151, tlmm BASE = 336 */
+        /* 489 : GPIO153, tlmm BASE = 336 */
+        /* 477 : GPIO141, tlmm BASE = 336 */
+        buckle_num = "343 486 487 489 477";
+        buckle_val = "0 0 0 0 0";
+};
+
+&als_after_sale_tsl2591 {
+	compatible = "tsl2591";
+	als_after_sale_product = <24>;
+	als_after_sale_xl = <706>;
+	als_after_sale_yl = <0>;
+	als_after_sale_xr = <806>;
+	als_after_sale_yr = <97>;
+	als_after_sale_gamma = <0>;
+};
+
+&als_after_sale_ltr311 {
+	compatible = "ltr311";
+	als_after_sale_product = <25>;
+	als_after_sale_xl = <706>;
+	als_after_sale_yl = <0>;
+	als_after_sale_xr = <806>;
+	als_after_sale_yr = <97>;
+	als_after_sale_gamma = <0>;
+};
+&pmk8350_vadc {
+	pm7325_quiet_therm {
+		reg = <PM7325_ADC7_AMUX_THM1_100K_PU>;
+		label = "pm7325_quiet_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+
+	pm7325_sdm_skin_therm {
+		reg = <PM7325_ADC7_AMUX_THM2_100K_PU>;
+		label = "pm7325_sdm_skin_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+
+	pm7325_system_h {
+		reg = <PM7325_ADC7_AMUX_THM3_100K_PU>;
+		label = "pm7325_system_h";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+
+	pm7325b_gpio1 {
+		reg = <PM7325B_ADC7_GPIO1_100K_PU>;
+		label = "pm7325b_gpio1";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+	pm7325b_chg_skin_therm {
+		reg = <PM7325B_ADC7_GPIO2_100K_PU>;
+		label = "pm7325b_chg_skin_therm";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+
+	pm7325b_gpio3 {
+		reg = <PM7325B_ADC7_GPIO3_100K_PU>;
+		label = "pm7325b_gpio3";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+	pm7325b_gpio4 {
+		reg = <PM7325B_ADC7_GPIO4_100K_PU>;
+		label = "pm7325b_gpio4";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+};
+&pmk8350_adc_tm {
+	io-channels = <&pmk8350_vadc PM7325_ADC7_AMUX_THM1_100K_PU>,
+			<&pmk8350_vadc PM7325_ADC7_AMUX_THM2_100K_PU>,
+			<&pmk8350_vadc PM7325_ADC7_AMUX_THM3_100K_PU>,
+			<&pmk8350_vadc PMK8350_ADC7_AMUX_THM1_100K_PU>;
+
+	pm7325_quiet_therm {
+		reg = <PM7325_ADC7_AMUX_THM1_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+
+	pm7325_sdm_skin_therm {
+		reg = <PM7325_ADC7_AMUX_THM2_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+
+	pm7325_system_h {
+		reg = <PM7325_ADC7_AMUX_THM3_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+
+};
+
+
+&pmk8350_adc_tm_iio {
+	io-channels =<&pmk8350_vadc PM7325B_ADC7_GPIO1_100K_PU>,
+                     <&pmk8350_vadc PM7325B_ADC7_GPIO2_100K_PU>,
+                     <&pmk8350_vadc PM7325B_ADC7_GPIO3_100K_PU>,
+                     <&pmk8350_vadc PM7325B_ADC7_GPIO4_100K_PU>;
+
+	pm7325b_gpio1 {
+		reg = <PM7325B_ADC7_GPIO1_100K_PU>;
+		label = "pm7325b_gpio1";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+	pm7325b_chg_skin_therm {
+		reg = <PM7325B_ADC7_GPIO2_100K_PU>;
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+	};
+
+	pm7325b_gpio3 {
+		reg = <PM7325B_ADC7_GPIO3_100K_PU>;
+		label = "pm7325b_gpio3";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+	pm7325b_gpio4 {
+		reg = <PM7325B_ADC7_GPIO4_100K_PU>;
+		label = "pm7325b_gpio4";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+    };
+
+};
+
+&thermal_zones {
+	quiet-therm-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm PM7325_ADC7_AMUX_THM1_100K_PU>;
+		wake-capable-sensor;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+
+			active-config1 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	camera-therm-usr {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm PM7325_ADC7_AMUX_THM2_100K_PU>;
+		wake-capable-sensor;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	system_h {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm PM7325_ADC7_AMUX_THM3_100K_PU>;
+		wake-capable-sensor;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+
+	charger1 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm_iio PM7325B_ADC7_GPIO1_100K_PU>;
+	};
+	charger {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm_iio PM7325B_ADC7_GPIO2_100K_PU>;
+		wake-capable-sensor;
+		trips {
+			active-config0 {
+				temperature = <125000>;
+				hysteresis = <1000>;
+				type = "passive";
+			};
+		};
+	};
+	rfboard {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm_iio PM7325B_ADC7_GPIO3_100K_PU>;
+	};
+	pa_0 {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "user_space";
+		thermal-sensors = <&pmk8350_adc_tm_iio PM7325B_ADC7_GPIO4_100K_PU>;
+	};
+};

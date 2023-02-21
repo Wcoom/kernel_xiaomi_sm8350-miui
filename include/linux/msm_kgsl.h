@@ -17,6 +17,14 @@ struct kgsl_gpu_freq_stat {
 	u64 idle_time;
 };
 
+#ifdef CONFIG_GPU_FREQ_STAT
+#define KGSL_MAX_PWRLEVELS 16
+struct kgsl_gpu_freq_stats {
+	u32 nr_freqs;
+	struct kgsl_gpu_freq_stat stats_list[KGSL_MAX_PWRLEVELS];
+};
+#endif
+
 /**
  * kgsl_gpu_num_freqs - Get number of available GPU frequencies
  *
@@ -48,5 +56,6 @@ int kgsl_gpu_stat(struct kgsl_gpu_freq_stat *stats, u32 numfreq);
  */
 int kgsl_gpu_frame_count(pid_t pid, u64 *frame_count);
 
-#endif /* _MSM_KGSL_H */
+u64 gpu_get_total_used(void);
 
+#endif /* _MSM_KGSL_H */

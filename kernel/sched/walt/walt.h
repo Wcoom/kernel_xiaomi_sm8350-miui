@@ -10,8 +10,49 @@
 
 #include <linux/sched/sysctl.h>
 #include <linux/sched/core_ctl.h>
+#include <linux/timekeeping.h>
+#include <linux/sched/stat.h>
+
+#ifdef CONFIG_HW_RTG
+#include "../hw_rtg/include/rtg.h"
+#include "../hw_rtg/include/rtg_sched.h"
+#include "../hw_rtg/include/rtg_cgroup.h"
+#endif
 
 #define EXITING_TASK_MARKER	0xdeaddead
+
+#define WINDOW_STATS_RECENT		0
+#define WINDOW_STATS_MAX		1
+#define WINDOW_STATS_MAX_RECENT_AVG	2
+#define WINDOW_STATS_AVG		3
+#define WINDOW_STATS_INVALID_POLICY	4
+
+#ifdef CONFIG_HW_RTG
+extern __read_mostly unsigned int sched_ravg_hist_size;
+extern __read_mostly unsigned int sched_group_upmigrate;
+extern __read_mostly unsigned int sched_group_downmigrate;
+extern unsigned int sysctl_sched_coloc_downmigrate_ns;
+
+extern int update_preferred_cluster(struct related_thread_group *grp,
+		struct task_struct *p, u32 old_load, bool from_tick);
+extern void do_update_preferred_cluster(struct related_thread_group *grp);
+extern int sync_cgroup_colocation(struct task_struct *p, bool insert);
+extern bool walt_get_rtg_status(struct task_struct *p);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0))
+extern int create_default_coloc_group(void);
+#endif
+#ifdef CONFIG_HW_CGROUP_RTG
+extern void transfer_busy_time(struct rq *rq,
+				struct related_thread_group *grp,
+				struct task_struct *p, int event);
+#endif
+extern bool uclamp_task_colocated(struct task_struct *p);
+#endif
+
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+extern void pred_load_inc_sum_pred_load(struct rq *rq, struct task_struct *p);
+extern void pred_load_dec_sum_pred_load(struct rq *rq, struct task_struct *p);
+#endif
 
 extern unsigned int walt_rotation_enabled;
 extern int __read_mostly num_sched_clusters;
@@ -47,6 +88,9 @@ walt_inc_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
 	 */
 	if (p->on_rq || (p->wts.last_sleep_ts < rq->wrq.window_start))
 		walt_fixup_cum_window_demand(rq, p->wts.demand_scaled);
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+	pred_load_inc_sum_pred_load(rq, p);
+#endif
 }
 
 static inline void
@@ -63,6 +107,9 @@ walt_dec_cumulative_runnable_avg(struct rq *rq, struct task_struct *p)
 	 */
 	if (task_on_rq_migrating(p) || p->state == TASK_RUNNING)
 		walt_fixup_cum_window_demand(rq, -(s64)p->wts.demand_scaled);
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+	pred_load_dec_sum_pred_load(rq, p);
+#endif
 }
 
 static inline void walt_adjust_nr_big_tasks(struct rq *rq, int delta, bool inc)
@@ -160,17 +207,61 @@ static inline bool is_suh_max(void)
 	return sysctl_sched_user_hint == sched_user_hint_max;
 }
 
+extern struct list_head cluster_head;
+#define for_each_sched_cluster(cluster) \
+	list_for_each_entry_rcu(cluster, &cluster_head, list)
+
+#ifdef CONFIG_HW_RTG
+#define for_each_sched_cluster_reverse(cluster) \
+	list_for_each_entry_reverse(cluster, &cluster_head, list)
+
+#define min_cap_cluster() \
+	list_first_entry(&cluster_head, struct walt_sched_cluster, list)
+
+#define max_cap_cluster() \
+	list_last_entry(&cluster_head, struct walt_sched_cluster, list)
+#endif
+
 #define DEFAULT_CGROUP_COLOC_ID 1
+#if defined(CONFIG_QCOM_WALT_RTG) || defined(CONFIG_HW_RTG) || defined(CONFIG_HW_CGROUP_RTG)
 static inline bool walt_should_kick_upmigrate(struct task_struct *p, int cpu)
 {
-	struct walt_related_thread_group *rtg = p->wts.grp;
+	if (get_cgroup_rtg_switch()) {
+#ifdef CONFIG_HW_RTG
+		struct related_thread_group *rtg = p->grp;
+#else
+		struct walt_related_thread_group *rtg = p->wts.grp;
+#endif
 
-	if (is_suh_max() && rtg && rtg->id == DEFAULT_CGROUP_COLOC_ID &&
-			    rtg->skip_min && p->wts.unfilter)
-		return is_min_capacity_cpu(cpu);
+		if (is_suh_max() && rtg && rtg->id == DEFAULT_CGROUP_COLOC_ID &&
+				rtg->skip_min && p->wts.unfilter)
+			return is_min_capacity_cpu(cpu);
+	} else {
+#ifdef CONFIG_HW_RTG
+		struct related_thread_group *rtg = p->grp;
+#else
+		struct walt_related_thread_group *rtg = p->wts.grp;
+#endif
+		if (is_suh_max() && rtg && rtg->id == DEFAULT_CGROUP_COLOC_ID &&
+					p->wts.unfilter) {
+#if defined (CONFIG_HW_RTG_NORMALIZED_UTIL) && defined (CONFIG_HW_RTG)
+			if (rtg->preferred_cluster &&
+				rtg->preferred_cluster != min_cap_cluster())
+#elif defined(CONFIG_QCOM_WALT_RTG)
+			if (rtg->skip_min)
+#endif
+				return is_min_capacity_cpu(cpu);
+		}
+	}
 
 	return false;
 }
+#else
+static inline bool walt_should_kick_upmigrate(struct task_struct *p, int cpu)
+{
+	return false;
+}
+#endif
 
 extern bool is_rtgb_active(void);
 extern u64 get_rtgb_active_time(void);
@@ -182,7 +273,18 @@ static inline void walt_try_to_wake_up(struct task_struct *p)
 	struct rq_flags rf;
 	u64 wallclock;
 	unsigned int old_load;
+#ifdef CONFIG_HW_RTG
+	struct related_thread_group *grp = NULL;
+#else
 	struct walt_related_thread_group *grp = NULL;
+#endif
+
+	if (get_cgroup_rtg_switch()) {
+#ifdef CONFIG_HW_CGROUP_RTG
+		if (unlikely(walt_disabled))
+			return;
+#endif
+	}
 
 	rq_lock_irqsave(rq, &rf);
 	old_load = task_load(p);
@@ -192,11 +294,25 @@ static inline void walt_try_to_wake_up(struct task_struct *p)
 	note_task_waking(p, wallclock);
 	rq_unlock_irqrestore(rq, &rf);
 
-	rcu_read_lock();
-	grp = task_related_thread_group(p);
-	if (update_preferred_cluster(grp, p, old_load, false))
-		set_preferred_cluster(grp);
-	rcu_read_unlock();
+	if (get_cgroup_rtg_switch()) {
+		rcu_read_lock();
+		grp = task_related_thread_group(p);
+		if (update_preferred_cluster(grp, p, old_load, false))
+#ifdef CONFIG_HW_RTG
+			do_update_preferred_cluster(grp);
+#else
+			set_preferred_cluster(grp);
+#endif
+		rcu_read_unlock();
+	} else {
+#ifdef CONFIG_QCOM_WALT_RTG
+		rcu_read_lock();
+		grp = task_related_thread_group(p);
+		if (update_preferred_cluster(grp, p, old_load, false))
+			set_preferred_cluster(grp);
+		rcu_read_unlock();
+#endif
+	}
 }
 
 static inline unsigned int walt_nr_rtg_high_prio(int cpu)
@@ -270,11 +386,6 @@ static inline u64 sched_irqload(int cpu)
 static inline bool walt_should_kick_upmigrate(struct task_struct *p, int cpu)
 {
 	return false;
-}
-
-static inline u64 get_rtgb_active_time(void)
-{
-	return 0;
 }
 
 #define walt_try_to_wake_up(a) {}

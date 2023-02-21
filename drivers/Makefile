@@ -86,6 +86,7 @@ obj-$(CONFIG_SPMI)		+= spmi/
 obj-$(CONFIG_HSI)		+= hsi/
 obj-$(CONFIG_SLIMBUS)		+= slimbus/
 obj-y				+= net/
+obj-$(CONFIG_CONNECTIVITY_HI110X) += connectivity/
 obj-$(CONFIG_ATM)		+= atm/
 obj-$(CONFIG_FUSION)		+= message/
 obj-y				+= firewire/
@@ -128,7 +129,14 @@ obj-$(CONFIG_PM_OPP)		+= opp/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
 obj-y				+= mmc/
+obj-$(CONFIG_HUAWEI_DSM_IOMT_HOST)     += iomt_host/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
+
+# used by dmd
+KBUILD_CFLAGS			+= -DHIVIEW_FUNC_NO_PREFIX
+obj-y				+= cam_hiview/
+obj-y				+= vendor_cam_hiview/
+
 obj-$(CONFIG_NEW_LEDS)		+= leds/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-y				+= firmware/
@@ -155,10 +163,13 @@ obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
 obj-$(CONFIG_REMOTEPROC)	+= remoteproc/
 obj-$(CONFIG_RPMSG)		+= rpmsg/
 obj-$(CONFIG_SOUNDWIRE)		+= soundwire/
+obj-$(CONFIG_CPLD_DRIVER)		+= cpld/
 
 # Virtualization drivers
 obj-$(CONFIG_VIRT_DRIVERS)	+= virt/
 obj-$(CONFIG_HYPERV)		+= hv/
+
+obj-$(CONFIG_HWDPS)		+= hwdps/
 
 obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 obj-$(CONFIG_EXTCON)		+= extcon/
@@ -184,5 +195,58 @@ obj-$(CONFIG_MULTIPLEXER)	+= mux/
 obj-$(CONFIG_UNISYS_VISORBUS)	+= visorbus/
 obj-$(CONFIG_SIOX)		+= siox/
 obj-$(CONFIG_GNSS)		+= gnss/
+obj-$(CONFIG_HW_GADGET)		+= hwusb/
+obj-$(CONFIG_LOGGER_EXTEND)	+= log/
+obj-$(CONFIG_HUAWEI_DSM)	+= dsm/
+obj-$(CONFIG_AUDIOKIT)          += devkit/audiokit/
+obj-y                           += hwpower/
+obj-y                           += huawei_platform/
+obj-$(CONFIG_LCD_KIT_DRIVER)    += devkit/lcdkit/
+obj-y                           += devkit/tpkit/
+obj-y                           += irda/
+obj-y                           += dp/
 obj-$(CONFIG_INTERCONNECT)	+= interconnect/
 obj-$(CONFIG_COUNTER)		+= counter/
+obj-$(CONFIG_HW_RECLAIM_ACCT) += reclaim_acct/
+obj-$(CONFIG_HW_PAGE_TRACKER)	+= hw_page_tracker/
+obj-$(CONFIG_HW_MEMORY_MONITOR)	+= mmonitor/
+obj-$(CONFIG_HW_MEMORY_MONITOR)	+= allocpages_delayacct/
+obj-$(CONFIG_RUNMODE_TYPE_PARSE) += hwmanufac/
+obj-$(CONFIG_MODEM_RESET) += modem_reset/
+obj-y                           += vibrator/
+obj-$(CONFIG_HW_BOOSTER) += booster/
+obj-y                           += bootdevice/
+obj-$(CONFIG_DFX_MEMCHECK)		+= memcheck/
+obj-m		+= rphone/
+obj-$(CONFIG_CHR_NETLINK_MODULE) += chr/
+obj-$(CONFIG_HW_DPIMARK_MODULE) += hw_dpi_mark/
+obj-y +=wifi_ext_adaptor/
+obj-y += hwril/
+obj-$(CONFIG_HW_WIFIPRO) += hwnet/
+obj-$(CONFIG_MEM_INSPECT)  += rmeminspect/
+obj-$(CONFIG_HW_NETWORK_AWARE) += network_aware/
+obj-$(CONFIG_DFX_ECALL) += easy_shell/
+obj-$(CONFIG_DFX_ZEROHUNG) += zerohung/
+obj-$(CONFIG_DFX_HUNGTASK) += hungtask/
+obj-$(CONFIG_BLACKBOX)    += blackbox/
+obj-$(CONFIG_RFFE_ANTENNA) += antenna_cable/
+obj-$(CONFIG_HUAWEI_ADC) += power/huawei_adc/
+obj-$(CONFIG_ANTENNA_BOARD_DETECT) += antenna_board_match/
+obj-$(CONFIG_HUAWEI_EMCOM) += emcom/
+obj-$(CONFIG_HW_CPULOAD_NOTI) += cpuload/
+obj-y                           += hwsensor/
+obj-y                           += hwsensors/
+obj-$(CONFIG_CARD_TRAY_GPIO_DETECT) += card_tray/
+obj-$(CONFIG_HUAWEI_BOOT_TIME) += boottime/
+obj-y += hwril_sim_sd/
+obj-y                           += blpwm/
+
+obj-y                           += cfi/
+obj-$(CONFIG_HUAWEI_WIFI) += hw_wlan/
+obj-$(CONFIG_HUAWEI_BT_FM) += hw_btfm/
+obj-$(CONFIG_HUAWEI_PERF_CTRL) += perf_ctrl/
+obj-$(CONFIG_HW_PERFHUB) += perfhub/
+obj-$(CONFIG_HW_RSMC) += rsmc/
+obj-y += hw_soc/
+
+obj-$(CONFIG_HUAWEI_GLOBAL_TASK_MANAGER) += hwgtm/

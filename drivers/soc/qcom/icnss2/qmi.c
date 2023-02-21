@@ -30,6 +30,10 @@
 #include "debug.h"
 #include "genl.h"
 
+#ifdef CONFIG_HUAWEI_WIFI
+#include <hw_wlan/hw_wlan.h>
+#endif
+
 #define WLFW_SERVICE_WCN_INS_ID_V01	3
 #define WLFW_SERVICE_INS_ID_V01		0
 #define WLFW_CLIENT_ID			0x4b4e454c
@@ -923,12 +927,53 @@ void icnss_dms_deinit(struct icnss_priv *priv)
 	qmi_handle_release(&priv->qmi_dms);
 }
 
+#ifdef CONFIG_HUAWEI_WIFI
+const void *icnss_get_wlan_pubfile_id(void)
+{
+    int wifi_parameter_len;
+    struct device_node *dp = NULL;
+
+#ifdef CONFIG_CNSS2_CALIBRATION
+    struct file *file = NULL;
+    /*tempWlanCal_bdwlan.bin文件用于产线CT、BT拆分工位场景下的校准，该bin的创建、删除均由装备完成。*/
+    char tempWifiCalBinPath[] = "/data/qca6750/tempWlanCal_bdwlan.bin";
+#endif
+
+    dp = of_find_node_by_path("/huawei_wifi_info");
+    if (!dp) {
+        icnss_pr_err("device is not available!\n");
+        return NULL;
+    } else {
+        icnss_pr_err("%s:dp->name:%s,dp->full_name:%s;\n" ,__func__, dp->name, dp->full_name);
+    }
+
+#ifdef CONFIG_CNSS2_CALIBRATION
+    icnss_pr_err("Enter CONFIG_CNSS2_CALIBRATION success.\n");
+    file = filp_open(tempWifiCalBinPath, O_RDONLY, 0);
+    if (!IS_ERR(file)) {
+        /*在指定路径下找到了tempWlanCal_bdwlan.bin文件，会尝试加载这个bin，用于产线校准。*/
+        icnss_pr_err("Find tempWlanCal_bdwlan.bin success.Try to load tempWlanCal_bdwlan.bin.\n");
+        filp_close(file, NULL);
+        return("tempWlanCal");
+    } else {
+        icnss_pr_err("Find tempWlanCal_bdwlan.bin fail.Try to load bin file corresponding to boardid.\n");
+    }
+#endif
+
+    /*在指定路径下没有找到了tempWlanCal_bdwlan.bin文件，会尝试加载该boardID单板实际对应的bin。*/
+    return of_get_property(dp, "wifi,pubfile_id", &wifi_parameter_len);
+}
+#endif
+
 static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 				   u32 bdf_type, char *filename,
 				   u32 filename_len)
 {
 	char filename_tmp[ICNSS_MAX_FILE_NAME];
 	int ret = 0;
+#ifdef CONFIG_HUAWEI_WIFI
+	const char *board_name = NULL;
+#endif
 
 	switch (bdf_type) {
 	case ICNSS_BDF_ELF:
@@ -945,6 +990,17 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 				 priv->board_id & 0xFF);
 		break;
 	case ICNSS_BDF_BIN:
+#ifdef CONFIG_HUAWEI_WIFI
+		board_name = icnss_get_wlan_pubfile_id();
+		/* retrive bdf devmodel prefix name from dtsi config */
+		if (board_name == NULL) {
+			icnss_pr_err("pubfile id get failed, bdf path default");
+			snprintf(filename_tmp, filename_len, BIN_BDF_FILE_NAME);
+		} else {
+			snprintf(filename_tmp, filename_len, "%s_"BIN_BDF_FILE_NAME, board_name);
+			icnss_pr_err("pubfile id get success, bdf path %s", filename_tmp);
+		}
+#else
 		if (priv->board_id == 0xFF)
 			snprintf(filename_tmp, filename_len, BIN_BDF_FILE_NAME);
 		else if (priv->board_id < 0xFF)
@@ -956,6 +1012,7 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 				 BDF_FILE_NAME_PREFIX "%02x.b%02x",
 				 priv->board_id >> 8 & 0xFF,
 				 priv->board_id & 0xFF);
+#endif
 		break;
 	case ICNSS_BDF_REGDB:
 		snprintf(filename_tmp, filename_len, REGDB_FILE_NAME);
@@ -971,9 +1028,9 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 		ret = -EINVAL;
 		break;
 	}
-
-	if (ret >= 0)
-		icnss_add_fw_prefix_name(priv, filename, filename_tmp);
+    
+    if (ret >= 0)
+        icnss_add_fw_prefix_name(priv, filename, filename_tmp);
 
 	return ret;
 }

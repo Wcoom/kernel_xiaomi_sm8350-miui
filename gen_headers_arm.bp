@@ -1013,6 +1013,8 @@ gen_headers_out_arm = [
     "camera/media/cam_sensor.h",
     "camera/media/cam_sync.h",
     "camera/media/cam_tfe.h",
+    "camera/media/custom/vendor_cam_sensor.h",
+    "camera/media/custom/vendor_cam_defs.h",
     "display/drm/msm_drm_pp.h",
     "display/drm/sde_drm.h",
     "display/media/mmm_color_fmt.h",

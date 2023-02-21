@@ -1,0 +1,97 @@
+#include "camera-sensor.dtsi"
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+		gpios-shared-pinctrl = <333 345 382 317 392>;
+		shared-pctrl-gpio-names = "mcam_iovdd", "mcam_dvdd", "mcam_afvdd", "mcam_avdd", "tcam_drvdd";
+		pinctrl-names = "mcam_iovdd_active", "mcam_iovdd_suspend", "mcam_dvdd_active",
+				"mcam_dvdd_suspend", "mcam_afvdd_active", "mcam_afvdd_suspend",
+				"mcam_avdd_active","mcam_avdd_suspend", "tcam_drvdd_active", "tcam_drvdd_suspend";
+		pinctrl-0 = <&mcam_iovdd_active>;
+		pinctrl-1 = <&mcam_iovdd_suspend>;
+		pinctrl-2 = <&mcam_dvdd_active>;
+		pinctrl-3 = <&mcam_dvdd_suspend>;
+		pinctrl-4 = <&mcam_afvdd_active>;
+		pinctrl-5 = <&mcam_afvdd_suspend>;
+		pinctrl-6 = <&mcam_avdd_active>;
+		pinctrl-7 = <&mcam_avdd_suspend>;
+		pinctrl-8 = <&tcam_drvdd_active>;
+		pinctrl-9 = <&tcam_drvdd_suspend>;
+	};
+};
+&tlmm {
+
+
+	mcam_avdd_active {
+		mux {
+			pins = "gpio9";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio9";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	mcam_avdd_suspend {
+		mux {
+			pins = "gpio9";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio9";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+&cam_cci0 {
+
+	qcom,cam-sensor0 { /* main */
+
+		gpios = <&tlmm 100 0>, /* mclk */
+			<&tlmm 16 0>, /* rst1 */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 37 0>, /* dvdd */
+			<&tlmm 25 0>, /* iovdd */
+			<&tlmm 74 0>, /* afvdd */
+			<&tlmm 84 0>; /* drvdd */
+	};
+
+	qcom,cam-sensor2 { /* sub */
+		gpios = <&tlmm 101 0>, /* mclk */
+			<&tlmm 106 0>, /* rst */
+			<&tlmm 9 0>,
+			<&tlmm 37 0>, /* dvdd */
+			<&tlmm 74 0>, /* afvdd */
+			<&tlmm 25 0>, /* iovdd */
+			<&tlmm 84 0>; /* drvdd */
+	};
+};
+&cam_cci1 {
+
+	qcom,cam-sensor1 { /* front */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 97 0>, /* avdd1 */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+	};
+
+	qcom,cam-sensor7 { /* front swing */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 97 0>, /* avdd1 */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+	};
+};

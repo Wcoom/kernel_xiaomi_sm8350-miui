@@ -13,9 +13,11 @@
 #include <linux/kcov.h>
 #include <linux/irq.h>
 #include <linux/scs.h>
+#include <linux/sched/hw_rtg/rtg_cgroup.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
+#include <platform/trace/events/rainbow.h>
 
 #include "../workqueue_internal.h"
 #include "../smpboot.h"
@@ -26,11 +28,43 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
+#ifdef CONFIG_HW_VIP_THREAD
+#include <chipset_common/hwcfs/hwcfs_common.h>
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+#include <chipset_common/hwqos/hwqos_fork.h>
+#endif
+
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/dtask.h>
 
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/sched.h>
+
+#ifdef CONFIG_HW_RTG
+#include <linux/sched/hw_rtg/rtg_sched.h>
+#endif
+
+#ifdef CONFIG_RENDER_RT
+#include <linux/perf_ctrl.h>
+#endif
+#ifdef CONFIG_HW_FUTEX_PI
+#include <chipset_common/linux/hw_pi.h>
+#endif
+
+#ifdef CONFIG_BIG_CLUSTER_CORE_CTRL
+#include <linux/sched/core_ctl.h>
+#include "../time/tick-internal.h"
+#endif
+
+#ifdef CONFIG_CGROUP_FREEZER
+#include <linux/freezer.h>
+#endif
+
+#ifdef CONFIG_HW_GRADED_SCHED
+#include <linux/hw_graded_sched/hw_graded_sched.h>
+#endif
 
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
@@ -147,6 +181,8 @@ struct rq *task_rq_lock(struct task_struct *p, struct rq_flags *rf)
 			cpu_relax();
 	}
 }
+
+DEFINE_TRACE(rb_trace_task_write);
 
 /*
  * RQ-clock updating methods:
@@ -1324,6 +1360,17 @@ static void __setscheduler_uclamp(struct task_struct *p,
 	}
 }
 
+#ifdef CONFIG_HW_RTG_NORMALIZED_UTIL
+void hw_setscheduler_uclamp(struct task_struct *p,
+			   const struct sched_attr *attr)
+{
+	if (p == NULL || attr == NULL)
+		return;
+
+	__setscheduler_uclamp(p, attr);
+}
+#endif
+
 static void uclamp_fork(struct task_struct *p)
 {
 	enum uclamp_id clamp_id;
@@ -1673,7 +1720,10 @@ static int migration_cpu_stop(void *data)
 	struct task_struct *p = arg->task;
 	struct rq *rq = this_rq();
 	struct rq_flags rf;
-
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	int src_cpu = cpu_of(rq);
+	bool moved = false;
+#endif
 	/*
 	 * The original target CPU might have gone down and we might
 	 * be on another CPU but it doesn't matter.
@@ -1694,8 +1744,12 @@ static int migration_cpu_stop(void *data)
 	 * we're holding p->pi_lock.
 	 */
 	if (task_rq(p) == rq) {
-		if (task_on_rq_queued(p))
+		if (task_on_rq_queued(p)) {
 			rq = __migrate_task(rq, &rf, p, arg->dest_cpu);
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+			moved = true;
+#endif
+		}
 		else
 			p->wake_cpu = arg->dest_cpu;
 	}
@@ -1703,6 +1757,14 @@ static int migration_cpu_stop(void *data)
 	raw_spin_unlock(&p->pi_lock);
 
 	local_irq_enable();
+
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	if (moved) {
+		sugov_check_freq_update(arg->dest_cpu);
+		sugov_check_freq_update(src_cpu);
+	}
+#endif
+
 	return 0;
 }
 
@@ -1762,7 +1824,7 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 	struct rq_flags rf;
 	struct rq *rq;
 	int ret = 0;
-#ifdef CONFIG_SCHED_WALT
+#if defined(CONFIG_SCHED_WALT) || defined(CONFIG_HUAWEI_SCHED_VIP)
 	cpumask_t allowed_mask;
 #endif
 
@@ -1828,6 +1890,11 @@ static int __set_cpus_allowed_ptr(struct task_struct *p,
 #else
 	if (cpumask_test_cpu(task_cpu(p), new_mask))
 		goto out;
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	cpumask_and(&allowed_mask, cpu_valid_mask, new_mask);
+	dest_cpu = select_allowed_cpu(p, &allowed_mask);
 #endif
 
 	if (task_running(rq, p) || p->state == TASK_WAKING) {
@@ -2712,6 +2779,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 {
 	unsigned long flags;
 	int cpu, success = 0;
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	int src_cpu = -1;
+#endif
 
 	preempt_disable();
 	if (p == current) {
@@ -2749,6 +2819,10 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 		goto unlock;
 
 	trace_sched_waking(p);
+
+#ifdef CONFIG_RENDER_RT
+	add_waker_to_render_rthread(p);
+#endif
 
 	/* We're going to change ->state: */
 	success = 1;
@@ -2811,8 +2885,9 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 	 */
 	smp_cond_load_acquire(&p->on_cpu, !VAL);
 
+#ifndef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
 	walt_try_to_wake_up(p);
-
+#endif
 	p->sched_contributes_to_load = !!task_contributes_to_load(p);
 	p->state = TASK_WAKING;
 
@@ -2823,6 +2898,21 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 
 	cpu = select_task_rq(p, p->wake_cpu, SD_BALANCE_WAKE, wake_flags,
 			     sibling_count_hint);
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	/*
+	 * Wakes p on current cpu with WF_SYNC flag.
+	 * Give scheduler a hint that current task should better be preempted.
+	 */
+	if ((wake_flags & WF_SYNC) &&
+	    (cpu == smp_processor_id()))
+		set_tsk_thread_flag(current, TIF_WAKE_SYNC);
+#endif
+
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	walt_try_to_wake_up(p);
+	src_cpu = task_cpu(p);
+#endif
 	if (task_cpu(p) != cpu) {
 		wake_flags |= WF_MIGRATED;
 		psi_ttwu_dequeue(p);
@@ -2842,6 +2932,22 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 unlock:
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 out:
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	/*
+	 * walt_try_to_wake_up-->walt_update_task_ravg-->
+	 * sugov_mark_util_change
+	 */
+	if (success) {
+		local_irq_save(flags);
+		sugov_check_freq_update(cpu);
+		local_irq_restore(flags);
+		if (src_cpu != -1 && src_cpu != cpu) {
+			local_irq_save(flags);
+			sugov_check_freq_update(src_cpu);
+			local_irq_restore(flags);
+		}
+	}
+#else
 #ifdef CONFIG_SCHED_WALT
 	if (success && sched_predl) {
 		raw_spin_lock_irqsave(&cpu_rq(cpu)->lock, flags);
@@ -2851,6 +2957,7 @@ out:
 						SCHED_CPUFREQ_PL);
 		raw_spin_unlock_irqrestore(&cpu_rq(cpu)->lock, flags);
 	}
+#endif
 #endif
 
 	if (success)
@@ -2898,6 +3005,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.prev_sum_exec_runtime	= 0;
 	p->se.nr_migrations		= 0;
 	p->se.vruntime			= 0;
+#ifdef CONFIG_HW_GRADED_SCHED
+	p->original_nice	= DEFAULT_ORIGINAL_NICE;
+#endif
 #ifdef CONFIG_SCHED_WALT
 	p->wts.last_sleep_ts		= 0;
 	p->wts.wake_up_idle		= false;
@@ -2907,6 +3017,12 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->wts.low_latency		= 0;
 	p->wts.iowaited			= false;
 #endif
+
+#ifdef CONFIG_HUAWEI_SCHED_STAT_YIELD
+	p->cumulative_yield_time	= 0;
+	p->last_yield_ts		= 0;
+#endif
+
 	INIT_LIST_HEAD(&p->se.group_node);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -2937,6 +3053,23 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->capture_control = NULL;
 #endif
 	init_numa_balancing(clone_flags, p);
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	p->vip_prio = 0;
+	INIT_LIST_HEAD(&p->vip_prio_entry);
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+	init_task_qos_info(p);
+#endif
+
+#ifdef CONFIG_HW_RTG
+	p->rtg_depth = 0;
+#endif
+
+#if defined(CONFIG_HW_FUTEX_PI) && defined(CONFIG_HUAWEI_SCHED_VIP)
+	p->normal_vip_prio = 0;
+#endif
 }
 
 DEFINE_STATIC_KEY_FALSE(sched_numa_balancing);
@@ -3081,7 +3214,14 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	if (unlikely(p->sched_reset_on_fork)) {
 		if (task_has_dl_policy(p) || task_has_rt_policy(p)) {
 			p->policy = SCHED_NORMAL;
+#ifdef CONFIG_HW_RTG
+			if (current->rtg_depth != 0)
+				p->static_prio = current->static_prio;
+			else
+				p->static_prio = NICE_TO_PRIO(0);
+#else
 			p->static_prio = NICE_TO_PRIO(0);
+#endif
 			p->rt_priority = 0;
 		} else if (PRIO_TO_NICE(p->static_prio) < 0)
 			p->static_prio = NICE_TO_PRIO(0);
@@ -3167,10 +3307,19 @@ void wake_up_new_task(struct task_struct *p)
 	struct rq_flags rf;
 	struct rq *rq;
 
-	add_new_task_to_grp(p);
+#ifdef CONFIG_RENDER_RT
+	add_render_rthread(p);
+#endif
+
 	raw_spin_lock_irqsave(&p->pi_lock, rf.flags);
+	add_new_task_to_grp(p);
 
 	p->state = TASK_RUNNING;
+
+#ifdef CONFIG_RENDER_RT
+	add_waker_to_render_rthread(p);
+#endif
+
 #ifdef CONFIG_SMP
 	/*
 	 * Fork balancing, do it here and not earlier because:
@@ -3607,6 +3756,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 
 	prepare_lock_switch(rq, next, rf);
 
+	trace_rb_trace_task_write((void *)next);
+
 	/* Here we just switch the register state and the stack. */
 	switch_to(prev, next, prev);
 	barrier();
@@ -3831,7 +3982,12 @@ void scheduler_tick(void)
 	u64 wallclock;
 	bool early_notif;
 	u32 old_load;
+#ifdef CONFIG_QCOM_WALT_RTG
 	struct walt_related_thread_group *grp;
+#endif
+#ifdef CONFIG_HW_RTG
+	struct rtg_tick_info tick_info;
+#endif
 	unsigned int flag = 0;
 
 	sched_clock_tick();
@@ -3850,9 +4006,19 @@ void scheduler_tick(void)
 	early_notif = early_detection_notify(rq, wallclock);
 	if (early_notif)
 		flag = SCHED_CPUFREQ_WALT | SCHED_CPUFREQ_EARLY_DET;
-
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	if (flag)
+		sugov_mark_util_change(cpu_of(rq), 0);
+#else
 	cpufreq_update_util(rq, flag);
+#endif
 	rq_unlock(rq, &rf);
+
+#ifdef CONFIG_HW_RTG
+	tick_info.curr = curr;
+	tick_info.old_load = old_load;
+	sched_update_rtg_tick(&tick_info);
+#endif
 
 	perf_event_task_tick();
 
@@ -3861,23 +4027,41 @@ void scheduler_tick(void)
 	trigger_load_balance(rq);
 #endif
 
+#ifdef CONFIG_HW_VIP_THREAD
+	trigger_vip_balance(rq);
+#endif
+
+#ifdef CONFIG_QCOM_WALT_RTG
 	rcu_read_lock();
 	grp = task_related_thread_group(curr);
 	if (update_preferred_cluster(grp, curr, old_load, true))
 		set_preferred_cluster(grp);
 	rcu_read_unlock();
+#endif
 
 	if (curr->sched_class == &fair_sched_class)
 		check_for_migration(rq, curr);
 
+#ifdef CONFIG_HW_RT_ACTIVE_LB
+	if (curr->sched_class == &rt_sched_class)
+		check_for_rt_migration(rq, curr);
+#endif
 #ifdef CONFIG_SMP
 	rq_lock(rq, &rf);
 	if (idle_cpu(cpu) && is_reserved(cpu) && !rq->active_balance)
 		clear_reserved(cpu);
 	rq_unlock(rq, &rf);
 #endif
-
 	trace_android_vh_scheduler_tick(rq);
+
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+	sugov_check_freq_update(cpu);
+#endif
+
+#ifdef CONFIG_BIG_CLUSTER_CORE_CTRL
+	if (cpu == tick_do_timer_cpu)
+		__core_ctl_check(rq->wrq.window_start);
+#endif
 }
 
 #ifdef CONFIG_NO_HZ_FULL
@@ -4277,6 +4461,9 @@ static void __sched notrace __schedule(bool preempt)
 	struct rq *rq;
 	int cpu;
 	u64 wallclock;
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	int wake_sync = 0;
+#endif
 
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
@@ -4320,9 +4507,17 @@ static void __sched notrace __schedule(bool preempt)
 		switch_count = &prev->nvcsw;
 	}
 
+#ifdef CONFIG_HW_VIP_THREAD
+	prev->enqueue_time = rq->clock;
+#endif
+
 	next = pick_next_task(rq, prev, &rf);
 	clear_tsk_need_resched(prev);
 	clear_preempt_need_resched();
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	wake_sync = test_and_clear_tsk_thread_flag(prev, TIF_WAKE_SYNC);
+#endif
 
 	wallclock = sched_ktime_clock();
 	if (likely(prev != next)) {
@@ -4333,6 +4528,14 @@ static void __sched notrace __schedule(bool preempt)
 
 		walt_update_task_ravg(prev, rq, PUT_PREV_TASK, wallclock, 0);
 		walt_update_task_ravg(next, rq, PICK_NEXT_TASK, wallclock, 0);
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+		sugov_check_freq_update(cpu);
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+		sched_vip_thread(rq, prev, next, wake_sync);
+#endif
+
 		rq->nr_switches++;
 		/*
 		 * RCU users of rcu_dereference(rq->curr) may not see
@@ -4660,6 +4863,9 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	const struct sched_class *prev_class;
 	struct rq_flags rf;
 	struct rq *rq;
+#ifdef CONFIG_HW_FUTEX_PI
+	unsigned int vip_prio = rt_mutex_calculate_vip_prio(p, pi_task);
+#endif
 
 	trace_android_rvh_rtmutex_prepare_setprio(p, pi_task);
 	/* XXX used to be waiter->prio, not waiter->task->prio */
@@ -4668,7 +4874,12 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	/*
 	 * If nothing changed; bail early.
 	 */
+#ifdef CONFIG_HW_FUTEX_PI
+	if (p->pi_top_task == pi_task && rt_mutex_mix_prio_equal(
+	    p, prio, vip_prio, pi_task))
+#else
 	if (p->pi_top_task == pi_task && prio == p->prio && !dl_prio(prio))
+#endif
 		return;
 
 	rq = __task_rq_lock(p, &rf);
@@ -4688,7 +4899,11 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	/*
 	 * For FIFO/RR we only need to set prio, if that matches we're done.
 	 */
+#ifdef CONFIG_HW_FUTEX_PI
+	if (rt_mutex_mix_prio_equal(p, prio, vip_prio, pi_task))
+#else
 	if (prio == p->prio && !dl_prio(prio))
+#endif
 		goto out_unlock;
 
 	/*
@@ -4756,7 +4971,12 @@ void rt_mutex_setprio(struct task_struct *p, struct task_struct *pi_task)
 	}
 
 	p->prio = prio;
-
+#if defined(CONFIG_HW_FUTEX_PI) && defined(CONFIG_HUAWEI_SCHED_VIP)
+	if (likely(is_hw_futex_pi_enabled()) && (p->vip_prio != vip_prio)) {
+		trace_sched_pi_setvipprio(p, p->vip_prio, vip_prio);
+		p->vip_prio = vip_prio;
+	}
+#endif
 	if (queued)
 		enqueue_task(rq, p, queue_flag);
 	if (running)
@@ -4788,6 +5008,16 @@ void set_user_nice(struct task_struct *p, long nice)
 	trace_android_rvh_set_user_nice(p, &nice, &allowed);
 	if ((task_nice(p) == nice || nice < MIN_NICE || nice > MAX_NICE) && !allowed)
 		return;
+
+#ifdef CONFIG_HW_GRADED_SCHED
+	if (get_grade_switch()) {
+		if (p->original_nice != DEFAULT_ORIGINAL_NICE) {
+			p->original_nice = nice;
+			nice = max(nice - HCFS_GRADED_OFFSET, (long)MIN_NICE);
+		}
+	}
+#endif
+
 	/*
 	 * We have to be careful, if called from sys_setpriority(),
 	 * the task might be in the middle of scheduling on another CPU.
@@ -4969,6 +5199,9 @@ static void __setscheduler_params(struct task_struct *p,
 		const struct sched_attr *attr)
 {
 	int policy = attr->sched_policy;
+#ifdef CONFIG_HW_GRADED_SCHED
+	int ori_nice;
+#endif
 
 	if (policy == SETPARAM_POLICY)
 		policy = p->policy;
@@ -4979,6 +5212,16 @@ static void __setscheduler_params(struct task_struct *p,
 		__setparam_dl(p, attr);
 	else if (fair_policy(policy))
 		p->static_prio = NICE_TO_PRIO(attr->sched_nice);
+
+#ifdef CONFIG_HW_GRADED_SCHED
+	if (get_grade_switch()) {
+		if (!fair_policy(policy) && p->original_nice != DEFAULT_ORIGINAL_NICE) {
+			ori_nice = p->original_nice;
+			p->original_nice = DEFAULT_ORIGINAL_NICE;
+			p->static_prio = NICE_TO_PRIO(ori_nice);
+		}
+	}
+#endif
 
 	/*
 	 * __sched_setscheduler() ensures attr->sched_priority == 0 when
@@ -5954,6 +6197,11 @@ static void do_sched_yield(void)
 {
 	struct rq_flags rf;
 	struct rq *rq;
+#ifdef CONFIG_HUAWEI_SCHED_STAT_YIELD
+	u64 now;
+	s64 delta;
+	const int esitimate_yield_overhead = 5 * NSEC_PER_USEC;
+#endif
 
 	rq = this_rq_lock_irq(&rf);
 
@@ -5963,6 +6211,14 @@ static void do_sched_yield(void)
 	preempt_disable();
 	rq_unlock_irq(rq, &rf);
 	sched_preempt_enable_no_resched();
+
+#ifdef CONFIG_HUAWEI_SCHED_STAT_YIELD
+	now = sched_ktime_clock();
+	delta = now - current->last_yield_ts;
+	if (delta > 0 && delta < esitimate_yield_overhead * 2)
+		current->cumulative_yield_time += delta;
+	current->last_yield_ts = now;
+#endif
 
 	schedule();
 }
@@ -6288,11 +6544,13 @@ void sched_show_task(struct task_struct *p)
 {
 	unsigned long free = 0;
 	int ppid;
+	char state;
 
 	if (!try_get_task_stack(p))
 		return;
 
-	printk(KERN_INFO "%-15.15s %c", p->comm, task_state_to_char(p));
+	state = task_state_to_char(p);
+	printk(KERN_INFO "%-15.15s %c ", p->comm, state);
 
 	if (p->state == TASK_RUNNING)
 		printk(KERN_CONT "  running task    ");
@@ -6304,13 +6562,15 @@ void sched_show_task(struct task_struct *p)
 	if (pid_alive(p))
 		ppid = task_pid_nr(rcu_dereference(p->real_parent));
 	rcu_read_unlock();
-	printk(KERN_CONT "%5lu %5d %6d 0x%08lx\n", free,
-		task_pid_nr(p), ppid,
-		(unsigned long)task_thread_info(p)->flags);
+	printk(KERN_CONT "%5lu %5d %5d %6d 0x%08lx %d\n", free,
+		task_pid_nr(p), task_tgid_nr(p), ppid,
+		(unsigned long)task_thread_info(p)->flags, cgroup_state(p));
 
 	print_worker_info(KERN_INFO, p);
-	trace_android_vh_sched_show_task(p);
-	show_stack(p, NULL);
+	if ((state != 'I') || !(p->flags & PF_WQ_WORKER)) {
+		trace_android_vh_sched_show_task(p);
+		show_stack(p, NULL);
+	}
 	put_task_stack(p);
 }
 EXPORT_SYMBOL_GPL(sched_show_task);
@@ -6686,6 +6946,9 @@ void migrate_tasks(struct rq *dead_rq, struct rq_flags *rf,
 		if (rq != dead_rq) {
 			rq_unlock(rq, rf);
 			rq = dead_rq;
+#ifdef CONFIG_HW_CPU_FREQ_GOV_SCHEDUTIL_COMMON
+			sugov_check_freq_update(dest_cpu);
+#endif
 			*rf = orf;
 			rq_relock(rq, rf);
 			if (!(rq->clock_update_flags & RQCF_UPDATED))
@@ -7042,6 +7305,13 @@ void __init sched_init(void)
 		init_cfs_rq(&rq->cfs);
 		init_rt_rq(&rq->rt);
 		init_dl_rq(&rq->dl);
+
+#ifdef CONFIG_HW_VIP_THREAD
+		vip_init_rq_data(rq);
+#endif
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+		sched_vip_init_rq_data(rq);
+#endif
 #ifdef CONFIG_FAIR_GROUP_SCHED
 		root_task_group.shares = ROOT_TASK_GROUP_LOAD;
 		INIT_LIST_HEAD(&rq->leaf_cfs_rq_list);
@@ -7097,6 +7367,11 @@ void __init sched_init(void)
 		atomic_set(&rq->nohz_flags, 0);
 #endif
 #endif /* CONFIG_SMP */
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+		rq->sum_pred_load = 0;
+		rq->curr_max_predls = 0;
+		rq->prev_max_predls = 0;
+#endif
 		hrtick_rq_init(rq);
 		atomic_set(&rq->nr_iowait, 0);
 	}
@@ -7343,6 +7618,7 @@ static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
 }
 
 #if defined(CONFIG_SCHED_WALT) && defined(CONFIG_UCLAMP_TASK_GROUP)
+static bool __read_mostly migrate_walt_disabled = false;
 static void walt_schedgp_attach(struct cgroup_taskset *tset)
 {
 	struct task_struct *task;
@@ -7350,10 +7626,23 @@ static void walt_schedgp_attach(struct cgroup_taskset *tset)
 	bool colocate;
 	struct task_group *tg;
 
-	cgroup_taskset_first(tset, &css);
-	tg = css_tg(css);
+	if (get_cgroup_rtg_switch()) {
+#ifdef CONFIG_HW_SCHED_WALT
+		if (unlikely(migrate_walt_disabled))
+			return;
+#endif
 
-	colocate = tg->wtg.colocate;
+		cgroup_taskset_first(tset, &css);
+		if (!css)
+			return;
+
+		tg = container_of(css, struct task_group, css);
+		colocate = tg->wtg.colocate;
+	} else {
+		cgroup_taskset_first(tset, &css);
+		tg = css_tg(css);
+		colocate = tg->wtg.colocate;
+	}
 
 	cgroup_taskset_for_each(task, css, tset)
 		sync_cgroup_colocation(task, colocate);
@@ -8517,6 +8806,8 @@ const u32 sched_prio_to_wmult[40] = {
  /*  15 */ 119304647, 148102320, 186737708, 238609294, 286331153,
 };
 
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_trace_task_write);
+
 #undef CREATE_TRACE_POINTS
 
 __read_mostly bool sched_predl = 1;
@@ -8553,3 +8844,22 @@ int set_task_boost(int boost, u64 period)
 	return 0;
 }
 #endif
+
+DEFINE_STATIC_KEY_FALSE(g_cgroup_rtg_switch);
+
+void set_cgroup_rtg_switch(bool enable)
+{
+#ifdef CONFIG_HW_CGROUP_RTG
+	if (enable) {
+		static_branch_enable(&g_cgroup_rtg_switch);
+		(void)call_create_default_coloc_group();
+	} else {
+		static_branch_disable(&g_cgroup_rtg_switch);
+	}
+#endif
+}
+
+bool get_cgroup_rtg_switch(void)
+{
+	return static_branch_likely(&g_cgroup_rtg_switch);
+}

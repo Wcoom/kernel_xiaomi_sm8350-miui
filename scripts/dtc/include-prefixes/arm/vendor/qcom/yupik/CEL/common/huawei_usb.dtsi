@@ -1,0 +1,19 @@
+&huawei_pd {
+	src_vconn = <2>; /* vbatsys */
+	src_vbus = <2>; /* pmic-8350b */
+	cc_dynamic_protect = <2>;
+};
+
+&usb_extra_modem {
+	gpio_q4 = <&tlmm 136 0>; /* GPIO_136 */
+	gpio_q5 = <&tlmm 96 0>; /* GPIO_109 */
+	charge_resistance = <80>;
+	charge_leak_current = <20>;
+	dwc3_irq_affinity_enable = <1>;
+	module_id = "2I4E";
+	status = "ok";
+};
+
+&huawei_usb_misc {
+	status = "ok";
+};

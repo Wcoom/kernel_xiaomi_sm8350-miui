@@ -1,0 +1,101 @@
+/dts-v1/;
+/plugin/;
+
+#include "../common/common.dtsi"
+#include "huawei-nfc.dtsi"
+#include "huawei_camera.dtsi"
+#include "huawei_wifi.dtsi"
+#include "huawei-bt.dtsi"
+/ {
+    /* bsp_replace_info @ model = "Huawei Technologies, Inc. %product_name%"; */
+    model = "Huawei Technologies, Inc. CET-AL00";
+    compatible = "qcom,lahaina-qrd", "qcom,lahaina", "qcom,qrd";
+    /* bsp_replace_info @ qcom,board-id = <%boardid% 0>; */
+    qcom,board-id = <8330 0>;
+};
+
+&rootparam {
+    /* bsp_replace_info @ qcom,boardid = <%boardid_split%>; */
+    /* auto_key_info @ name: boardid type: uint32 default: 0 */
+    qcom,boardid = <8 3 3 0>;
+    /* bsp_replace_info @ qcom,board_name = "%board_name%"; */
+    qcom,board_name = "CET_AL00_VA";
+    /* bsp_replace_info @ qcom,product_name = "%product_name%"; */
+    qcom,product_name = "CET_BID1100";
+    /* bsp_replace_info @ hardware_version = "%hardware_version%"; */
+    hardware_version = "HN0CETUSM";
+    /* bsp_replace_info @ huawei,modem_id = <%modem_id% 0x0>; */
+    huawei,modem_id = <1100 0x0>;
+};
+
+&tlmm {
+	rt9426_irq_pins_default {
+		mux {
+			pins = "gpio67";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio67";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+};
+
+&huawei_pd {
+	src_vconn = <2>; /* 5v-boost */
+	src_vbus = <2>; /* 5v-boost */
+};
+
+&huawei_batt_info {
+	shield_ct_sign = <3>;
+};
+
+&wireless_charger {
+	rx_mode_para =
+		/*This table should be arranged in ascending order of power mode priority*/
+		/*mode  tx_vout  tx_iout tx_vset  rx_vset  rx_iset vrect_lth tbatt cable cert  icon time expect_mode*/
+		"5W",   "5000",  "475",  "5000",  "5500",  "825",  "4650",   "-1", "-1", "-1", "0", "-1",  "4",
+		"7.5W", "9000",  "1400", "9000",  "9900",  "825",  "8000",   "-1", "-1", "-1", "0", "-1",  "2",
+		"10W",  "9000",  "2000", "9000",  "9900",  "1100", "9000",   "-1", "-1", "1",  "1", "-1",  "4",
+		"SC_2", "9000",  "2000", "9000",  "9000",  "-1",   "-1",     "45", "-1", "1",  "1", "-1",  "4",
+		"SC_4", "15000", "1800", "15000", "15000", "-1",   "-1",     "46", "-1", "1",  "2", "-1",  "-1";
+};
+
+&wireless_sc {
+	init_para_col = <12>; /* must couple with init_para */
+	init_para =
+		/* in ratio-descending order
+		 * ext_pwr: bit(0): needed by sc chip; bit(1): needed by rx
+		 * type   type_name ext_pwr rx_ratio vbatt(lth, hth) rx_vout  vout_th vdiff  ileak_th vdelt  rx_vmax
+		 */
+		   "0x2", "SC_2",   "0",    "1",     "3450", "4442", "9000",  "450",  "300", "100",   "300", "10000",
+		   "0x4", "SC_4",   "2",    "2",     "3450", "4442", "15000", "500",  "300", "100",   "300", "20000";
+};
+
+&wireless_tx {
+	pwr_type = <4>; /* WL_TX_PWR_5VBST */
+	tx_vset_para = <
+		4500 6400 5000 4500 5800 0 0 0
+		8500 10900 10000 9000 11000 0 0 0
+	>;
+	tx_cap = <
+		/* type vout iout extra */
+		0x9 5000  825  0
+		0x9 5000  1000 0
+		0xA 18000 1500 0x22
+	>;
+};
+
+&qupv3_se9_i2c {
+	sm5450@6F{
+		fcp_support = <0>;
+		scp_support = <0>;
+	};
+};
+
+&qupv3_se13_i2c {
+	protocol_ic_stm32g031_i2c@56 {
+		status = "ok";
+	};
+};

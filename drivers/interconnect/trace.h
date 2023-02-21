@@ -75,6 +75,55 @@ TRACE_EVENT(icc_set_bw_end,
 		  __entry->ret)
 );
 
+#ifdef CONFIG_CX_POWER_OPTIMIZE
+TRACE_EVENT(icc_set_bw_ori,
+
+	TP_PROTO(struct icc_path *p, u32 avg_bw, u32 peak_bw),
+
+	TP_ARGS(p, avg_bw, peak_bw),
+
+	TP_STRUCT__entry(
+		__string(path_name, p->name)
+		__field(u32, avg_bw)
+		__field(u32, peak_bw)
+	),
+
+	TP_fast_assign(
+		__assign_str(path_name, p->name);
+		__entry->avg_bw = avg_bw;
+		__entry->peak_bw = peak_bw;
+	),
+
+	TP_printk("path=%s avg_bw=%u peak_bw=%u",
+		  __get_str(path_name),
+		  __entry->avg_bw,
+		  __entry->peak_bw)
+);
+
+TRACE_EVENT(icc_set_bw_mod,
+
+	TP_PROTO(struct icc_path *p, u32 avg_bw, u32 peak_bw),
+
+	TP_ARGS(p, avg_bw, peak_bw),
+
+	TP_STRUCT__entry(
+		__string(path_name, p->name)
+		__field(u32, avg_bw)
+		__field(u32, peak_bw)
+	),
+
+	TP_fast_assign(
+		__assign_str(path_name, p->name);
+		__entry->avg_bw = avg_bw;
+		__entry->peak_bw = peak_bw;
+	),
+
+	TP_printk("path=%s avg_bw=%u peak_bw=%u",
+		  __get_str(path_name),
+		  __entry->avg_bw,
+		  __entry->peak_bw)
+);
+#endif
 #endif /* _TRACE_INTERCONNECT_H */
 
 /* This part must be outside protection */

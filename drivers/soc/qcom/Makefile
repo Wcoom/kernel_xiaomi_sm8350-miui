@@ -59,7 +59,7 @@ obj-$(CONFIG_QCOM_MEM_BUF) += mem-buf.o mem_buf_dma_buf.o
 obj-$(CONFIG_QCOM_MEMORY_DUMP_V2) += memory_dump_v2.o
 obj-$(CONFIG_QCOM_DCC_V2) += dcc_v2.o
 obj-$(CONFIG_MSM_JTAGV8) += jtagv8.o jtagv8-etm.o
-obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o
+obj-$(CONFIG_QCOM_SMCINVOKE) += smcinvoke.o cmdmonitor.o
 obj-$(CONFIG_QCOM_MICRODUMP) += microdump_collector.o
 obj-$(CONFIG_QCOM_SDM845_LLCC) += llcc-sdm845.o
 obj-$(CONFIG_QCOM_LLCC_PERFMON) += llcc_perfmon.o
@@ -76,6 +76,7 @@ obj-$(CONFIG_QTI_PMIC_GLINK) += pmic_glink.o
 obj-$(CONFIG_QTI_BATTERY_GLINK_DEBUG) += qti_battery_debug.o
 obj-$(CONFIG_QTI_ALTMODE_GLINK) += altmode-glink.o
 obj-$(CONFIG_QTI_PMIC_PON_LOG) += pmic-pon-log.o
+obj-$(CONFIG_QTI_PMIC_PON_LOG) += pmic-cpu-log.o
 obj-$(CONFIG_QTI_DDR_STATS_LOG) += ddr_stats.o
 obj-$(CONFIG_QTI_SYSTEM_PM) += system_pm.o
 obj-$(CONFIG_QTI_SYSTEM_PM_RPM) += system_pm_rpm.o
@@ -120,6 +121,7 @@ obj-$(CONFIG_QCOM_ADSP_MANUAL_VOTE) += adsp_vote_qmi.o adsp_lpm_voting_v01.o
 obj-$(CONFIG_MSM_SLATECOM) += slatecom_spi.o
 obj-$(CONFIG_MSM_SLATECOM_INTERFACE) += slatecom_interface.o
 obj-$(CONFIG_QCOM_AOP_SET_DDR) += aop-set-ddr.o
+obj-y += pil-q6v5-mss/
 obj-$(CONFIG_CPU_V7) += idle-v7.o
 obj-$(CONFIG_DUMP_XBL_LOG) += dump_boot_log.o
 obj-$(CONFIG_QCOM_CX_IPEAK) += cx_ipeak.o
@@ -127,3 +129,10 @@ obj-$(CONFIG_QCOM_CX_IPEAK) += cx_ipeak.o
 obj-$(CONFIG_GNSS_SIRF)		+= gnsssirf/
 obj-$(CONFIG_MSM_SEB) += slate_events_bridge.o
 obj-$(CONFIG_MSM_SEB_RPMSG) += slate_events_bridge_rpmsg.o
+# cx dmd
+obj-$(CONFIG_HUAWEI_DSM) += cx_dmd/
+# Close LTO
+ifeq ($(use_klto), false)
+CFLAGS_soc_sleep_stats.o := -Wframe-larger-than=5120
+CFLAGS_rpmh_master_stat.o := -Wframe-larger-than=5120
+endif

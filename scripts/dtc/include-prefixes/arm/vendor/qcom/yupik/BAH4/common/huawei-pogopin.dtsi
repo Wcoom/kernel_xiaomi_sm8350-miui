@@ -1,0 +1,153 @@
+&tlmm {
+	usb_switch_gpio:usb_switch_gpio {
+		mux{
+			pins = "gpio107";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio107";
+			bias-disable;
+			output-low;
+		};
+	};
+
+	pogo_path_switch_gpio:pogo_path_switch_gpio {
+		mux{
+			pins = "gpio80";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio80";
+			bias-disable;
+			output-high;
+		};
+	};
+
+	typec_int_gpio:typec_int_gpio {
+		mux{
+			pins = "gpio7";
+			function = "gpio";
+                };
+
+		config {
+			pins = "gpio7";
+			bias-disable;
+			input-enable;
+                };
+        };
+
+	pogopin_int_gpio:pogopin_int_gpio {
+		mux{
+			pins = "gpio47";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio47";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	buck_boost_gpio:buck_boost_gpio {
+		mux{
+			pins = "gpio39";
+			function = "gpio";
+                };
+
+		config {
+			pins = "gpio39";
+			bias-pull-down;
+			output-low;
+                };
+        };
+
+	pogo_otg_int_gpio:pogo_otg_int_gpio {
+		mux{
+			pins = "gpio25";
+			function = "gpio";
+		};
+
+                config {
+			pins = "gpio25";
+			bias-disable;
+			input-enable;
+                };
+        };
+
+	pogo_otg_ocp_en:pogo_otg_ocp_en {
+		mux{
+			pins = "gpio38";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio38";
+			bias-pull-down;
+			output-low;
+		};
+	};
+
+	pogo_otg_ocp_int:pogo_otg_ocp_int {
+		mux{
+			pins = "gpio63";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio63";
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+
+&pogopin_extcon {
+	compatible = "huawei,pogopin_extcon";
+	status = "ok";
+};
+
+&usb0 {
+	extcon = <&pogopin_extcon>;
+};
+
+&soc {
+	qcom,pmic_glink {
+		qcom,ucsi {
+		compatible = "qcom,ucsi-glink";
+		depends-on-supply = <&usb0>;
+		};
+	};
+};
+
+&pogopin_charger {
+	compatible = "huawei,pogopin";
+	huawei,pogopin_support = <1>;
+	huawei,pogopin_extcon =  <1>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&usb_switch_gpio &pogo_path_switch_gpio &typec_int_gpio &buck_boost_gpio &pogopin_int_gpio>;
+	usb_switch_gpio = <&tlmm 107 0x00>;
+	pogo_path_switch_gpio = <&tlmm 80 0x00>;
+	typec_int_gpio = <&tlmm 7 0x00>;
+	pogopin_int_gpio = <&tlmm 47 0x00>;
+	buck_boost_gpio = <&tlmm 39 0>;
+	qcom,dp-aux-switch = <&fsa4480>;
+	pin_num = <1>;
+	status = "ok";
+};
+
+&pogopin_otg_by_id {
+	compatible = "huawei,pogopin-otg-by-id";
+	io-channels = <&pmk8350_vadc PM7325_ADC7_GPIO3>;
+	io-channel-names = "pogo-id";
+	otg_adc_channel = <2>;
+	pinctrl-names = "default";
+	ocp_control_support = <1>;
+	pinctrl-0 = <&pogo_otg_int_gpio &pogo_otg_ocp_en &pogo_otg_ocp_int>;
+	pogo_otg_int_gpio = <&tlmm 25 0>;
+	ocp_int_gpio = <&tlmm 63 0>;
+	ocp_en_gpio = <&tlmm 38 0>;
+	status = "ok";
+};

@@ -1,0 +1,3 @@
+&huawei_batt_info {
+    shield_ct_sign = <1>;
+};

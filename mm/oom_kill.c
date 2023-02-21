@@ -45,12 +45,21 @@
 #include <linux/show_mem_notifier.h>
 #include <linux/memory_hotplug.h>
 
+#include <platform/trace/events/rainbow.h>
+
 #include <asm/tlb.h>
 #include "internal.h"
 #include "slab.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/oom.h>
+
+#undef CREATE_TRACE_POINTS
+#include <platform/trace/hooks/memcheck.h>
+
+#ifdef CONFIG_LOG_JANK
+#include <huawei_platform/log/log_jank.h>
+#endif
 
 int sysctl_panic_on_oom =
 IS_ENABLED(CONFIG_DEBUG_PANIC_ON_OOM) ? 2 : 0;
@@ -461,6 +470,10 @@ static void dump_tasks(struct oom_control *oc)
 		rcu_read_lock();
 		for_each_process(p)
 			dump_task(p, oc);
+
+		trace_mm_mem_stats_show(0);
+		trace_mm_vmalloc_detail_show(0);
+
 		rcu_read_unlock();
 	}
 }
@@ -931,6 +944,10 @@ static void __oom_kill_process(struct task_struct *victim, const char *message)
 #ifdef CONFIG_PRIORITIZE_OOM_TASKS
 	panic_on_oom_timeout = 0;
 #endif
+#ifdef CONFIG_LOG_JANK
+	LOG_JANK_D(JLID_KERNEL_OOM, "#ARG1:<%s>#ARG2:<%d>", victim->comm,
+			task_pid_nr(victim));
+#endif
 	mark_oom_victim(victim);
 	pr_err("%s: Killed process %d (%s) total-vm:%lukB, anon-rss:%lukB, file-rss:%lukB, shmem-rss:%lukB, UID:%u pgtables:%lukB oom_score_adj:%hd\n",
 		message, task_pid_nr(victim), victim->comm, K(mm->total_vm),
@@ -1018,11 +1035,7 @@ static void oom_kill_process(struct oom_control *oc, const char *message)
 	}
 	task_unlock(victim);
 
-	if (__ratelimit(&oom_rs)
-#ifdef CONFIG_PRIORITIZE_OOM_TASKS
-	    && oc->min_kill_adj < CONFIG_OOM_TASK_PRIORITY_ADJ_LIMIT
-#endif
-	   )
+	if (__ratelimit(&oom_rs))
 		dump_header(oc, victim);
 
 	/*
@@ -1081,6 +1094,7 @@ static void check_panic_on_oom(struct oom_control *oc)
 #endif
 
 	dump_header(oc, NULL);
+	trace_rb_sreason_set("out_of_memory");
 	panic("Out of memory: %s panic_on_oom is enabled\n",
 		sysctl_panic_on_oom == 2 ? "compulsory" : "system-wide");
 }
@@ -1206,8 +1220,10 @@ bool out_of_memory(struct oom_control *oc)
 		 * system level, we cannot survive this and will enter
 		 * an endless loop in the allocator. Bail out now.
 		 */
-		if (!is_sysrq_oom(oc) && !is_memcg_oom(oc))
+		if (!is_sysrq_oom(oc) && !is_memcg_oom(oc)) {
+			trace_rb_sreason_set("deadlocked_mem");
 			panic("System is deadlocked on memory\n");
+		}
 	}
 	if (oc->chosen && oc->chosen != (void *)-1UL)
 		oom_kill_process(oc, !is_memcg_oom(oc) ? "Out of memory" :
@@ -1284,6 +1300,7 @@ void check_panic_on_foreground_kill(struct task_struct *p)
 			&& panic_on_adj_zero)) {
 		show_mem(SHOW_MEM_FILTER_NODES, NULL);
 		show_mem_call_notifiers();
+		trace_rb_sreason_set("kill_fore_task");
 		panic("Attempt to kill foreground task: %s", p->comm);
 	}
 }

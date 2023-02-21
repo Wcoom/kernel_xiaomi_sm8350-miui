@@ -15,6 +15,10 @@
 #include <soc/qcom/minidump.h>
 #endif
 
+#ifdef CONFIG_HUAWEI_DSM
+#include <hw_wlan/hw_wlan.h>
+#endif
+
 #include "main.h"
 #include "bus.h"
 #include "debug.h"
@@ -44,7 +48,9 @@
 #define CNSS_MHI_M2_TIMEOUT_DEFAULT	25
 #define CNSS_QMI_TIMEOUT_DEFAULT	10000
 #endif
-#define CNSS_BDF_TYPE_DEFAULT		CNSS_BDF_ELF
+#define CNSS_BDF_TYPE_DEFAULT		CNSS_BDF_BIN
+//#define CNSS_BDF_TYPE_DEFAULT		CNSS_BDF_ELF
+//end
 #define CNSS_TIME_SYNC_PERIOD_DEFAULT	900000
 
 static struct cnss_plat_data *plat_env;
@@ -1117,7 +1123,6 @@ static int cnss_subsys_powerup(const struct subsys_desc *subsys_desc)
 {
 	struct cnss_plat_data *plat_priv;
 	int ret = 0;
-
 	if (!subsys_desc->dev) {
 		cnss_pr_err("dev from subsys_desc is NULL\n");
 		return -ENODEV;
@@ -1197,7 +1202,7 @@ static int cnss_subsys_ramdump(int enable,
 			       const struct subsys_desc *subsys_desc)
 {
 	struct cnss_plat_data *plat_priv = dev_get_drvdata(subsys_desc->dev);
-
+	int ret;
 	if (!plat_priv) {
 		cnss_pr_err("plat_priv is NULL\n");
 		return -ENODEV;
@@ -1205,8 +1210,8 @@ static int cnss_subsys_ramdump(int enable,
 
 	if (!enable)
 		return 0;
-
-	return cnss_bus_dev_ramdump(plat_priv);
+	ret = cnss_bus_dev_ramdump(plat_priv);
+	return ret;
 }
 
 static void cnss_recovery_work_handler(struct work_struct *work)
@@ -1411,6 +1416,9 @@ out:
 int cnss_self_recovery(struct device *dev,
 		       enum cnss_recovery_reason reason)
 {
+#ifdef CONFIG_HUAWEI_DSM
+	hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "cnss_self_recovery, resason = %d", reason);
+#endif
 	cnss_schedule_recovery(dev, reason);
 	return 0;
 }
@@ -2001,6 +2009,7 @@ void cnss_unregister_subsys(struct cnss_plat_data *plat_priv)
 	subsys_unregister(subsys_info->subsys_device);
 }
 
+#if IS_ENABLED(CONFIG_QCOM_MEMORY_DUMP_V2)
 static void *cnss_create_ramdump_device(struct cnss_plat_data *plat_priv)
 {
 	struct cnss_subsys_info *subsys_info = &plat_priv->subsys_info;
@@ -2014,6 +2023,7 @@ static void cnss_destroy_ramdump_device(struct cnss_plat_data *plat_priv,
 {
 	destroy_ramdump_device(ramdump_dev);
 }
+#endif
 
 int cnss_do_ramdump(struct cnss_plat_data *plat_priv)
 {
@@ -2561,7 +2571,7 @@ int cnss_request_firmware_direct(struct cnss_plat_data *plat_priv,
 					       &plat_priv->plat_dev->dev);
 	else
 		return firmware_request_nowarn(fw_entry, filename,
-					       &plat_priv->plat_dev->dev);
+					&plat_priv->plat_dev->dev);
 }
 
 #if IS_ENABLED(CONFIG_INTERCONNECT)
@@ -3234,7 +3244,7 @@ retry:
 				goto retry;
 			}
 			goto power_off;
-		}
+	}
 	}
 
 	ret = cnss_dms_init(plat_priv);

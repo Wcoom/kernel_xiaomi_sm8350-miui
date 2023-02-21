@@ -1,0 +1,22 @@
+&huawei_wifi_info{
+    compatible = "huawei,hw_wifi_info";
+    status = "ok";
+    wifi,pubfile_id = "palau_al00_va";
+    wifi,chiptype = "WIFI_QUALCOMM_WCN6851";
+    wifi,ini_type = "pal_common";
+};
+
+&hi110x {
+	hi110x,gpio_power_on = <&tlmm 126 0>;                /*GPIO_126*/
+	hi110x,gpio_bfgx_power_on = <&tlmm 201 0>;           /*GPIO_201*/
+	hi110x,gpio_wlan_power_on = <&tlmm 132 0>;           /*GPIO_132*/
+};
+
+&hisi_wifi {
+	hi110x,gpio_wlan_wakeup_host =  <&tlmm 23 0>;       /*GPIO_23*/
+	hi110x,gpio_host_wakeup_wlan =  <&tlmm 104 0>;      /*GPIO_104*/
+};
+
+&hisi_bfgx {
+	hi110x,gpio_bfgx_wakeup_host = <&tlmm 190 0>;        /*GPIO_190*/
+};

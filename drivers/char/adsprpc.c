@@ -53,6 +53,10 @@
 #include <linux/preempt.h>
 #include <linux/of_reserved_mem.h>
 
+#ifdef CONFIG_HUAWEI_QCOM_ADSP_MISC
+#include <sound/adsp_misc_interface.h>
+#endif
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/fastrpc.h>
 
@@ -567,10 +571,10 @@ struct fastrpc_mmap {
 	uintptr_t raddr;
 	int uncached;
 	int secure;
-	bool is_persistent;		/* Indicates whether map is persistent */
-	int frpc_md_index;		/* Minidump unique index */
+	bool is_persistent; /* Indicates whether map is persistent */
+	int frpc_md_index; /* Minidump unique index */
 	uintptr_t attr;
-	bool in_use;			/* Indicates if persistent map is in use*/
+	bool in_use; /* Indicates if persistent map is in use */
 	struct timespec64 map_start_time;
 	struct timespec64 map_end_time;
 };
@@ -1287,7 +1291,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 			err = fastrpc_minidump_remove_region(map);
 
 		if (map->phys && !map->is_persistent) {
-			trace_fastrpc_dma_free(-1, map->phys, map->size);
+		trace_fastrpc_dma_free(-1, map->phys, map->size);
 			dma_free_attrs(me->dev, map->size, (void *)map->va,
 			(dma_addr_t)map->phys, (unsigned long)map->attr);
 		}
@@ -1333,7 +1337,7 @@ static void fastrpc_mmap_free(struct fastrpc_mmap *map, uint32_t flags)
 			dma_buf_put(map->buf);
 	}
 	if (!map->is_persistent) {
-		kfree(map);
+	kfree(map);
 	}
 }
 
@@ -3903,7 +3907,7 @@ static int fastrpc_init_create_static_process(struct fastrpc_file *fl,
 		if (!fastrpc_get_persistent_map(init->memlen, &mem)) {
 			mutex_lock(&fl->map_mutex);
 			err = fastrpc_mmap_create(fl, -1, 0, init->mem,
-				 init->memlen, ADSP_MMAP_REMOTE_HEAP_ADDR, &mem);
+				init->memlen, ADSP_MMAP_REMOTE_HEAP_ADDR, &mem);
 			mutex_unlock(&fl->map_mutex);
 			if (err)
 				goto bail;
@@ -4588,14 +4592,14 @@ static int fastrpc_mmap_remove_ssr(struct fastrpc_file *fl)
 				goto bail;
 			if (me->ramdump_handle && me->enable_ramdump) {
 				ramdump_segments_rh.address =
-				match->phys;
+					match->phys;
 				ramdump_segments_rh.v_address =
-				(void __iomem *)match->va;
+					(void __iomem *)match->va;
 				ramdump_segments_rh.size = match->size;
 				ret = fastrpc_elf_ramdump(me->ramdump_handle, &ramdump_segments_rh);
-				if (ret < 0)
-					pr_err("adsprpc: %s: unable to dump heap (err %d)\n",
-						__func__, ret);
+					if (ret < 0)
+						pr_err("adsprpc: %s: unable to dump heap (err %d)\n",
+							__func__, ret);
 			}
 			fastrpc_mmap_free(match, 0);
 		}
@@ -4725,6 +4729,7 @@ static int fastrpc_internal_munmap(struct fastrpc_file *fl,
 	mutex_lock(&fl->map_mutex);
 	fastrpc_mmap_free(map, 0);
 	mutex_unlock(&fl->map_mutex);
+
 bail:
 	if (err && map) {
 		mutex_lock(&fl->map_mutex);
@@ -6242,6 +6247,9 @@ static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 	if (code == SUBSYS_BEFORE_SHUTDOWN) {
 		pr_info("adsprpc: %s: %s subsystem is restarting\n",
 			__func__, gcinfo[cid].subsys);
+#ifdef CONFIG_HUAWEI_QCOM_ADSP_MISC
+		adsp_misc_unmap_memory();
+#endif
 		mutex_lock(&me->channel[cid].smd_mutex);
 		ctx->ssrcount++;
 		ctx->issubsystemup = 0;

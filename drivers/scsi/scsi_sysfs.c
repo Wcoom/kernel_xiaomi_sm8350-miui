@@ -1359,7 +1359,6 @@ int scsi_sysfs_add_sdev(struct scsi_device *sdev)
 		if (error)
 			return error;
 	}
-
 	scsi_autopm_put_device(sdev);
 	return error;
 }

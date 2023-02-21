@@ -15,6 +15,9 @@
 #include <linux/uidgid.h>
 #include <linux/pm_wakeup.h>
 #include <linux/ipc_logging.h>
+#ifdef CONFIG_HUAWEI_DUBAI
+#include <huawei_platform/log/hwlog_kernel.h>
+#endif
 
 #include <net/sock.h>
 #include <uapi/linux/sched/types.h>
@@ -46,6 +49,10 @@ extern bool glink_resume_pkt;
 #endif
 extern unsigned int qrtr_get_service_id(unsigned int node_id,
 					unsigned int port_id);
+
+extern int s2idle_state_flag;
+extern int suspend_freeze_processes_flag;
+extern int dpm_suspend_start_flag;
 /**
  * struct qrtr_hdr_v1 - (I|R)PCrouter packet header version 1
  * @version: protocol version
@@ -222,6 +229,48 @@ static int qrtr_bcast_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 static struct qrtr_sock *qrtr_port_lookup(int port);
 static void qrtr_port_put(struct qrtr_sock *ipc);
 
+static void qrtr_log_tx_suspend_debug(struct qrtr_hdr_v1 *cb, u64 pl_buf)
+{
+	if (s2idle_state_flag || suspend_freeze_processes_flag \
+		|| dpm_suspend_start_flag) {
+		pr_info(
+			"[qrtr tx_suspend_debug]:Len:0x%x CF:0x%x src[0x%x:0x%x] \
+			dst[0x%x:0x%x] [%08x %08x] [%s], s2idle_state_flag[%d] \
+			suspend_freeze_processes_flag[%d] \
+			dpm_suspend_start_flag[%d]\n",
+			cb->size, cb->confirm_rx, cb->src_node_id,
+			cb->src_port_id, cb->dst_node_id, cb->dst_port_id,
+			(unsigned int)pl_buf, (unsigned int)(pl_buf >> 32),
+			current->comm, s2idle_state_flag,
+			suspend_freeze_processes_flag,
+			dpm_suspend_start_flag);
+		s2idle_state_flag = 0;
+		suspend_freeze_processes_flag  = 0;
+		dpm_suspend_start_flag = 0;
+	}
+}
+
+static void qrtr_log_rx_suspend_debug(struct qrtr_cb *cb, u64 pl_buf)
+{
+	if (s2idle_state_flag || suspend_freeze_processes_flag \
+		|| dpm_suspend_start_flag) {
+		pr_info(
+			"[qrtr rx_suspend_debug]: src[0x%x:0x%x] dst[0x%x:0x%x] \
+			[%08x %08x]: comm [%s], s2idle_state_flag[%d] \
+			suspend_freeze_processes_flag[%d] \
+			dpm_suspend_start_flag[%d]\n",
+			cb->src_node, cb->src_port,
+			cb->dst_node, cb->dst_port,
+			(unsigned int)pl_buf, (unsigned int)(pl_buf >> 32),
+			current->comm, s2idle_state_flag,
+			suspend_freeze_processes_flag,
+			dpm_suspend_start_flag);
+		s2idle_state_flag = 0;
+		suspend_freeze_processes_flag  = 0;
+		dpm_suspend_start_flag = 0;
+	}
+}
+
 static void qrtr_log_tx_msg(struct qrtr_node *node, struct qrtr_hdr_v1 *hdr,
 			    struct sk_buff *skb)
 {
@@ -242,6 +291,7 @@ static void qrtr_log_tx_msg(struct qrtr_node *node, struct qrtr_hdr_v1 *hdr,
 			  hdr->dst_node_id, hdr->dst_port_id,
 			  (unsigned int)pl_buf, (unsigned int)(pl_buf >> 32),
 			  current->comm);
+		qrtr_log_tx_suspend_debug(hdr, pl_buf);
 	} else {
 		skb_copy_bits(skb, QRTR_HDR_MAX_SIZE, &pkt, sizeof(pkt));
 		if (type == QRTR_TYPE_NEW_SERVER ||
@@ -268,7 +318,7 @@ static void qrtr_log_tx_msg(struct qrtr_node *node, struct qrtr_hdr_v1 *hdr,
 				place_marker("M - Modem QMI Readiness TX");
 				pr_err("qrtr: Modem QMI Readiness TX cmd:0x%x node[0x%x]\n",
 				       type, hdr->src_node_id);
-			}
+		}
 		}
 		else if (type == QRTR_TYPE_DEL_PROC)
 			QRTR_INFO(node->ilc,
@@ -281,19 +331,24 @@ static void qrtr_log_tx_msg(struct qrtr_node *node, struct qrtr_hdr_v1 *hdr,
 static void qrtr_log_resume_pkt(struct qrtr_cb *cb, u64 pl_buf)
 {
 	unsigned int service_id;
-
 	if (glink_resume_pkt) {
 		glink_resume_pkt = false;
 		service_id = qrtr_get_service_id(cb->src_node, cb->src_port);
-		pr_info("[QRTR RESUME PKT]:src[0x%x:0x%x] dst[0x%x:0x%x] [%08x %08x]: service[0x%x]\n",
-			cb->src_node, cb->src_port,
-			cb->dst_node, cb->dst_port,
-			(unsigned int)pl_buf, (unsigned int)(pl_buf >> 32),
-			service_id);
+		if (!service_id)
+			service_id = qrtr_get_service_id(cb->dst_node,cb->dst_port);
+		pr_info(
+		"[QRTR RESUME PKT]: src[0x%x:0x%x] dst[0x%x:0x%x] [%08x %08x]: service[0x%x]\n",
+	         cb->src_node, cb->src_port,
+		 cb->dst_node, cb->dst_port,
+		 (unsigned int)pl_buf, (unsigned int)(pl_buf >> 32),
+		 service_id);
+#ifdef CONFIG_HUAWEI_DUBAI
+		HWDUBAI_LOGE("DUBAI_TAG_QRTR_RESUME_PKT", "src=%d dst=%d service=%d",
+			cb->src_node, cb->dst_node, service_id);
+#endif
 	}
 }
 #endif
-
 static void qrtr_log_rx_msg(struct qrtr_node *node, struct sk_buff *skb)
 {
 	struct qrtr_ctrl_pkt pkt = {0,};
@@ -315,6 +370,7 @@ static void qrtr_log_rx_msg(struct qrtr_node *node, struct sk_buff *skb)
 #if defined(CONFIG_RPMSG_QCOM_GLINK_NATIVE)
 		qrtr_log_resume_pkt(cb, pl_buf);
 #endif
+		qrtr_log_rx_suspend_debug(cb, pl_buf);
 	} else {
 		skb_copy_bits(skb, 0, &pkt, sizeof(pkt));
 		if (cb->type == QRTR_TYPE_NEW_SERVER ||
@@ -340,8 +396,8 @@ static void qrtr_log_rx_msg(struct qrtr_node *node, struct sk_buff *skb)
 				place_marker("M - Modem QMI Readiness RX");
 				pr_err("qrtr: Modem QMI Readiness RX cmd:0x%x node[0x%x]\n",
 				       cb->type, cb->src_node);
-			}
 		}
+	}
 	}
 }
 
@@ -835,7 +891,7 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	struct qrtr_sock *ipc;
 	struct sk_buff *skb;
 	struct qrtr_cb *cb;
-	unsigned int size;
+	size_t size;
 	unsigned int ver;
 	size_t hdrlen;
 	int errcode;
@@ -902,7 +958,7 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	if (cb->dst_port == QRTR_PORT_CTRL_LEGACY)
 		cb->dst_port = QRTR_PORT_CTRL;
 
-	if (len != ALIGN(size, 4) + hdrlen)
+	if (!size || len != ALIGN(size, 4) + hdrlen)
 		goto err;
 
 	if (cb->dst_port != QRTR_PORT_CTRL && cb->type != QRTR_TYPE_DATA &&
@@ -1419,9 +1475,9 @@ static int qrtr_port_assign(struct qrtr_sock *ipc, int *port)
 		if (rc >= 0)
 			*port = rc;
 	} else if (*port < QRTR_MIN_EPH_SOCKET &&
-			!(capable(CAP_NET_ADMIN) ||
-			in_egroup_p(AID_VENDOR_QRTR) ||
-			in_egroup_p(GLOBAL_ROOT_GID))) {
+		   !(capable(CAP_NET_ADMIN) ||
+		   in_egroup_p(AID_VENDOR_QRTR) ||
+		   in_egroup_p(GLOBAL_ROOT_GID))) {
 		rc = -EACCES;
 	} else if (*port == QRTR_PORT_CTRL) {
 		rc = idr_alloc(&qrtr_ports, ipc, 0, 1, GFP_ATOMIC);
@@ -1806,6 +1862,11 @@ static int qrtr_recvmsg(struct socket *sock, struct msghdr *msg,
 	rc = copied;
 
 	if (addr) {
+		/* There is an anonymous 2-byte hole after sq_family,
+		 * make sure to clear it.
+		 */
+		memset(addr, 0, sizeof(*addr));
+
 		addr->sq_family = AF_QIPCRTR;
 		addr->sq_node = cb->src_node;
 		addr->sq_port = cb->src_port;

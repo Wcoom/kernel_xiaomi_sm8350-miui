@@ -16,13 +16,19 @@
 #include <linux/bitmap.h>
 #include <linux/irqdomain.h>
 #include <linux/sysfs.h>
+#include <platform/trace/events/rainbow.h>
 
 #include "internals.h"
+
+#define RB_TRACE_IRQ_ENTER	0
+#define RB_TRACE_IRQ_EXIT	1
 
 /*
  * lockdep: we want to handle all irq_desc locks as a single lock-class:
  */
 static struct lock_class_key irq_desc_lock_class;
+
+DEFINE_TRACE(rb_trace_irq_write);
 
 #if defined(CONFIG_SMP)
 static int __init irq_affinity_setup(char *str)
@@ -663,6 +669,8 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 	unsigned int irq = hwirq;
 	int ret = 0;
 
+	trace_rb_trace_irq_write(RB_TRACE_IRQ_ENTER, hwirq);
+
 	irq_enter();
 
 #ifdef CONFIG_IRQ_DOMAIN
@@ -682,6 +690,7 @@ int __handle_domain_irq(struct irq_domain *domain, unsigned int hwirq,
 	}
 
 	irq_exit();
+	trace_rb_trace_irq_write(RB_TRACE_IRQ_EXIT, hwirq);
 	set_irq_regs(old_regs);
 	return ret;
 }
@@ -967,6 +976,8 @@ static bool irq_is_nmi(struct irq_desc *desc)
 {
 	return desc->istate & IRQS_NMI;
 }
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_trace_irq_write);
 
 /**
  * kstat_irqs - Get the statistics for an interrupt

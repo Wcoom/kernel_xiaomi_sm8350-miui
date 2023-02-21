@@ -29,10 +29,21 @@
 #include <linux/soc/qcom/smem.h>
 #include <linux/soc/qcom/smem_state.h>
 
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
+
 #include "peripheral-loader.h"
 
 #define PIL_TZ_AVG_BW  0
 #define PIL_TZ_PEAK_BW UINT_MAX
+
+#ifdef CONFIG_HUAWEI_MODEM_CRASH_LOG
+#include "pil-q6v5-mss/pil_q6v5_mss_log.h"
+#include "pil-q6v5-mss/pil_q6v5_mss_ultils.h"
+#define MODEM_SYS_NAME "modem"
+#define WPSS_NAME "wpss"
+#define WLAN_NAME "wlan"
+#endif
 
 #define XO_FREQ			19200000
 #define PROXY_TIMEOUT_MS	10000
@@ -763,14 +774,15 @@ static void log_failure_reason(const struct pil_tz_data *d)
 	size_t size;
 	char *smem_reason, reason[MAX_SSR_REASON_LEN];
 	const char *name = d->subsys_desc.name;
+	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
+	int err;
 
 	if (d->smem_id == -1)
 		return;
 
 	smem_reason = qcom_smem_get(QCOM_SMEM_HOST_ANY, d->smem_id, &size);
 	if (IS_ERR(smem_reason) || !size) {
-		pr_err("%s SFR: (unknown, qcom_smem_get failed).\n",
-									name);
+		pr_err("%s SFR: (unknown, qcom_smem_get failed).\n", name);
 		return;
 	}
 	if (!smem_reason[0]) {
@@ -780,6 +792,16 @@ static void log_failure_reason(const struct pil_tz_data *d)
 
 	strlcpy(reason, smem_reason, min(size, (size_t)MAX_SSR_REASON_LEN));
 	pr_err("%s subsystem failure reason: %s.\n", name, reason);
+#ifdef CONFIG_HUAWEI_MODEM_CRASH_LOG
+	if (strcmp(name, MODEM_SYS_NAME) == 0) {
+		save_modem_reset_log(reason, MAX_SSR_REASON_LEN);
+	} else if (strcmp(name, WPSS_NAME) == 0 || strcmp(name, WLAN_NAME) == 0) {
+		wpss_reset_save_log(reason, MAX_SSR_REASON_LEN);
+	}
+#endif
+	err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "%s_crash", name);
+	if (err >= 0)
+		trace_rb_sreason_set(attach_info_buffer);
 }
 
 static int subsys_shutdown(const struct subsys_desc *subsys, bool force_stop)
@@ -833,6 +855,13 @@ static int subsys_powerup(const struct subsys_desc *subsys)
 		pil_shutdown(&d->desc);
 		subsys_disable_all_irqs(d);
 	}
+#ifdef CONFIG_HUAWEI_MODEM_CRASH_LOG
+	if (strcmp(d->subsys_desc.name, MODEM_SYS_NAME) == 0) {
+		pr_err("restart_oem_qmi on %s!\n", d->subsys_desc.name);
+		/* after modem restart, restart oem qmi */
+		restart_oem_qmi();
+	}
+#endif
 
 	return ret;
 }
@@ -1529,6 +1558,11 @@ load_from_pil:
 			goto err_ramdump;
 		}
 	}
+#ifdef CONFIG_HUAWEI_MODEM_CRASH_LOG
+	if (strcmp(d->subsys_desc.name, MODEM_SYS_NAME) == 0) {
+		create_modem_log_queue();
+	}
+#endif
 
 	d->ramdump_dev = create_ramdump_device(d->subsys_desc.name,
 								&pdev->dev);
@@ -1610,12 +1644,14 @@ static int pil_tz_driver_probe(struct platform_device *pdev)
 static int pil_tz_driver_exit(struct platform_device *pdev)
 {
 	struct pil_tz_data *d = platform_get_drvdata(pdev);
-	const struct of_device_id *match;
-
-	match = of_match_node(pil_tz_match_table, pdev->dev.of_node);
+	const struct of_device_id *match = of_match_node(pil_tz_match_table, pdev->dev.of_node);
 	if (!match)
 		return -ENODEV;
-
+#ifdef CONFIG_HUAWEI_MODEM_CRASH_LOG
+	if (strcmp(d->subsys_desc.name, MODEM_SYS_NAME) == 0) {
+		destroy_modem_log_queue();
+	}
+#endif
 	if (match->data == pil_tz_scm_pas_probe) {
 		icc_put(scm_perf_client);
 	} else {

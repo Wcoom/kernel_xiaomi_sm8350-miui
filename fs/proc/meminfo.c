@@ -14,6 +14,8 @@
 #include <linux/vmstat.h>
 #include <linux/atomic.h>
 #include <linux/vmalloc.h>
+#include <linux/msm_kgsl.h>
+#include <linux/memblock.h>
 #ifdef CONFIG_CMA
 #include <linux/cma.h>
 #endif
@@ -24,6 +26,15 @@
 #include <soc/qcom/minidump.h>
 #include <linux/seq_buf.h>
 #endif
+#ifdef CONFIG_ION
+#include <linux/ion.h>
+#endif
+
+#ifdef CONFIG_MEMCG_PROTECT_LRU
+#include <linux/protect_lru.h>
+#endif
+
+u64 ashmem_get_total_size(void);
 
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
@@ -117,6 +128,7 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 
 	show_val_kb(m, "SwapTotal:      ", i.totalswap);
 	show_val_kb(m, "SwapFree:       ", i.freeswap);
+	show_val_kb(m, "ZramUsed:       ", global_zone_page_state(NR_ZSPAGES));
 	show_val_kb(m, "Dirty:          ",
 		    global_node_page_state(NR_FILE_DIRTY));
 	show_val_kb(m, "Writeback:      ",
@@ -176,8 +188,34 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "CmaTotal:       ", totalcma_pages);
 	show_val_kb(m, "CmaFree:        ",
 		    global_zone_page_state(NR_FREE_CMA_PAGES));
+	show_val_kb(m, "CmaUsed:        ", cma_get_total_used());
 #endif
 
+#ifdef CONFIG_ION
+	show_val_kb(m, "IonTotalCache:  ", ion_get_total_cache());
+	show_val_kb(m, "IonTotalUsed:   ",
+		    ion_get_total_heap_bytes() / PAGE_SIZE);
+#endif
+
+	show_val_kb(m, "GpuTotalUsed:   ", gpu_get_total_used());
+
+	show_val_kb(m, "AshmemUsed:     ",
+		    ashmem_get_total_size() / PAGE_SIZE);
+	show_val_kb(m, "RsvTotalUsed:   ",
+		    memblock_reserved_size() / PAGE_SIZE);
+
+#ifdef CONFIG_TASK_PROTECT_LRU
+	show_val_kb(m, "PActive(anon):  ",
+		    global_zone_page_state(NR_PROTECT_ACTIVE_ANON));
+	show_val_kb(m, "PInactive(anon):",
+		    global_zone_page_state(NR_PROTECT_INACTIVE_ANON));
+	show_val_kb(m, "PActive(file):  ",
+		    global_zone_page_state(NR_PROTECT_ACTIVE_FILE));
+	show_val_kb(m, "PInactive(file):",
+		    global_zone_page_state(NR_PROTECT_INACTIVE_FILE));
+#elif defined(CONFIG_MEMCG_PROTECT_LRU)
+	show_val_kb(m, "Protected:      ", get_protected_pages());
+#endif
 	if (m) {
 		hugetlb_report_meminfo(m);
 		arch_report_meminfo(m);

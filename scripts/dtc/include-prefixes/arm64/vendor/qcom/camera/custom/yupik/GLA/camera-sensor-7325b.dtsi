@@ -1,0 +1,49 @@
+&pm7325b_gpios {
+	rear_wide_avdd_active: rear_wide_avdd_active {
+		pins = "gpio8";
+		function = "normal";
+		power-source = <0>;
+		output-high;
+		bias-disable;
+	};
+
+	rear_wide_avdd_suspend: rear_wide_avdd_suspend {
+		pins = "gpio8";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+		bias-disable;
+	};
+
+	front_tel_avdd_active: front_tel_avdd_active {
+		pins = "gpio7";
+		function = "normal";
+		power-source = <0>;
+		output-high;
+		bias-disable;
+	};
+
+	front_tel_avdd_suspend: front_tel_avdd_suspend {
+		pins = "gpio7";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+		bias-disable;
+	};
+
+	front_tel_dvdd_en_active: front_tel_dvdd_en_active {
+		pins = "gpio5";
+		function = "normal";
+		power-source = <0>;
+		output-high;
+		bias-disable;
+	};
+
+	front_tel_dvdd_en_suspend: front_tel_dvdd_en_suspend {
+		pins = "gpio5";
+		function = "normal";
+		power-source = <0>;
+		output-low;
+		bias-disable;
+	};
+};

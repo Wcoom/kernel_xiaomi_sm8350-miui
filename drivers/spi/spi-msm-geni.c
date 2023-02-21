@@ -21,10 +21,12 @@
 #include <linux/spi/spi-msm-geni.h>
 #include <linux/pinctrl/consumer.h>
 #include <soc/qcom/boot_stats.h>
-
+#ifdef CONFIG_HUAWEI_DSM
+#include <../soc/qcom/cx_dmd/soc_sleep_stats_dmd.h>
+#endif
 #define SPI_NUM_CHIPSELECT	(4)
 #define SPI_XFER_TIMEOUT_MS	(250)
-#define SPI_AUTO_SUSPEND_DELAY	(250)
+#define SPI_AUTO_SUSPEND_DELAY	(20)
 /* SPI SE specific registers */
 #define SE_SPI_CPHA		(0x224)
 #define SE_SPI_LOOPBACK		(0x22C)
@@ -129,7 +131,9 @@ struct spi_geni_gsi {
 	struct dma_async_tx_descriptor *rx_desc;
 	struct gsi_desc_cb desc_cb;
 };
-
+/* add by huawei for rsmc begin */
+typedef u32 spi_loop_cb(u32 value);
+/* add by huawei for rsmc end */
 struct spi_geni_master {
 	struct se_geni_rsc spi_rsc;
 	resource_size_t phys_addr;
@@ -178,6 +182,9 @@ struct spi_geni_master {
 	bool slave_state;
 	bool slave_cross_connected;
 	bool use_fixed_timeout;
+	/* add by huawei for rsmc begin */
+	spi_loop_cb *loop_cb;
+	/* add by huawei for rsmc end */
 };
 
 static void spi_slv_setup(struct spi_geni_master *mas);
@@ -1009,7 +1016,6 @@ static int spi_geni_prepare_message(struct spi_master *spi,
 					"%s: System suspended\n", __func__);
 				return -EACCES;
 			}
-
 			ret = pm_runtime_get_sync(mas->dev);
 			if (ret < 0) {
 				dev_err(mas->dev,
@@ -1338,14 +1344,12 @@ static int spi_geni_prepare_transfer_hardware(struct spi_master *spi)
 	 */
 	if (mas->is_le_vm)
 		return 0;
-
 	/* Client to respect system suspend */
 	if (!pm_runtime_enabled(mas->dev)) {
 		GENI_SE_ERR(mas->ipc, false, NULL,
-			"%s: System suspended\n", __func__);
+		"%s: System suspended\n", __func__);
 		return -EACCES;
 	}
-
 	if (mas->gsi_mode && !mas->shared_ee) {
 		struct se_geni_rsc *rsc;
 		int ret = 0;
@@ -1353,9 +1357,9 @@ static int spi_geni_prepare_transfer_hardware(struct spi_master *spi)
 		if (!mas->is_la_vm) {
 			/* Do this only for non TVM LA usecase */
 			/* May not be needed here, but maintain parity */
-			rsc = &mas->spi_rsc;
-			ret = pinctrl_select_state(rsc->geni_pinctrl,
-						rsc->geni_gpio_active);
+		rsc = &mas->spi_rsc;
+		ret = pinctrl_select_state(rsc->geni_pinctrl,
+					rsc->geni_gpio_active);
 		}
 
 		if (ret)
@@ -1411,8 +1415,8 @@ static int spi_geni_unprepare_transfer_hardware(struct spi_master *spi)
 
 		if (!mas->is_la_vm) {
 			/* Do this only for non TVM LA usecase */
-			rsc = &mas->spi_rsc;
-			ret = pinctrl_select_state(rsc->geni_pinctrl,
+		rsc = &mas->spi_rsc;
+		ret = pinctrl_select_state(rsc->geni_pinctrl,
 						rsc->geni_gpio_sleep);
 		}
 
@@ -1630,11 +1634,152 @@ dma_unprep:
 
 }
 
+/* add by huawei for rsmc begin */
+void set_spi_loop_cb(spi_loop_cb *cb, struct spi_controller *master)
+{
+	struct spi_geni_master *mas = spi_master_get_devdata(master);
+	mas->loop_cb = cb;
+}
+EXPORT_SYMBOL_GPL(set_spi_loop_cb);
+
+static int fifo_cfg(struct spi_transfer *xfer,
+				struct spi_geni_master *mas, u16 mode,
+				struct spi_master *spi)
+{
+	int ret = 0;
+	int bytes_per_word;
+	u32 m_cmd = 0;
+	u32 m_param = 0;
+	int idx = 0;
+	int div = 0;
+	u32 spi_tx_cfg = geni_read_reg(mas->base, SE_SPI_TRANS_CFG);
+	u32 trans_len = 0;
+
+	xfer->bits_per_word = 32;
+	spi_setup_word_len(mas, mode, xfer->bits_per_word);
+	mas->cur_word_len = xfer->bits_per_word;
+
+	if (xfer->speed_hz != mas->cur_speed_hz) {
+		ret = get_spi_clk_cfg(xfer->speed_hz, mas, &idx, &div);
+		if (ret)
+			return ret;
+		mas->cur_speed_hz = xfer->speed_hz;
+	}
+
+	bytes_per_word = (mas->cur_word_len / BITS_PER_BYTE) + 1;
+	trans_len = (xfer->len / bytes_per_word) & TRANS_LEN_MSK;
+	mas->cur_xfer = xfer;
+	geni_write_reg(trans_len, mas->base, SE_SPI_TX_TRANS_LEN);
+	geni_write_reg(trans_len, mas->base, SE_SPI_RX_TRANS_LEN);
+	mas->tx_rem_bytes = xfer->len;
+	mas->rx_rem_bytes = xfer->len;
+	mas->cur_xfer_mode = FIFO_MODE;
+
+	geni_se_select_mode(mas->base, mas->cur_xfer_mode);
+	spi_tx_cfg |= CS_TOGGLE;
+	geni_write_reg(spi_tx_cfg, mas->base, SE_SPI_TRANS_CFG);
+	m_cmd = SPI_FULL_DUPLEX;
+	geni_setup_m_cmd(mas->base, m_cmd, m_param);
+	(void)geni_read_reg(mas->base, SE_GENI_RX_FIFOn);
+	mb();
+	return ret;
+}
+
+static inline u32 fifo_trs(struct spi_geni_master *mas, u16 mode,
+				struct spi_master *spi, u32 addr)
+{
+	u32 rx;
+	int rx_wc = 0;
+	int rx_last_byte = 0;
+	u32 rx_fifo_status;
+
+	geni_write_reg(0, mas->base, SE_SPI_TX_TRANS_LEN);
+	geni_write_reg(0, mas->base, SE_SPI_RX_TRANS_LEN);
+	geni_write_reg(0, mas->base, SE_GSI_EVENT_EN);
+	geni_write_reg(CS_TOGGLE, mas->base, SE_SPI_TRANS_CFG);
+	geni_write_reg((u32)(SPI_FULL_DUPLEX << M_OPCODE_SHFT), mas->base, SE_GENI_M_CMD0);
+	geni_write_reg(addr, mas->base, SE_GENI_TX_FIFOn);
+	while (rx_wc == 0 || (rx_last_byte != 0 && rx_last_byte != 4)) {
+		rx_fifo_status = geni_read_reg(mas->base, SE_GENI_RX_FIFO_STATUS);
+		rx_wc = (rx_fifo_status & RX_FIFO_WC_MSK);
+		rx_last_byte = (rx_fifo_status & RX_LAST_BYTE_VALID_MSK) >> RX_LAST_BYTE_VALID_SHFT;
+	}
+	rx = geni_read_reg(mas->base, SE_GENI_RX_FIFOn);
+	mb();
+	return rx;
+}
+
+static void tx_cb(struct spi_geni_master *mas)
+{
+	const u8 *tx_buf = NULL;
+	int j;
+	u32 fifo_word = 0;
+	u8 *fifo_byte = NULL;
+
+	if (!mas->cur_xfer)
+		return;
+	tx_buf = mas->cur_xfer->tx_buf;
+	fifo_byte = (u8 *)&fifo_word;
+	for (j = 0; j < 4; j++)
+		fifo_byte[j] = tx_buf[j];
+	geni_write_reg(fifo_word, mas->base, SE_GENI_TX_FIFOn);
+	mb();
+	mas->tx_rem_bytes -= 4;
+}
+
+static void rx_cb(struct spi_geni_master *mas)
+{
+	int j;
+	int rx_wc = 0;
+	u8 *rx_buf = NULL;
+	int rx_last_byte = 0;
+	int rx_last;
+	u32 fifo_word = 0;
+	u8 *fifo_byte = NULL;
+	u32 rx_fifo_status;
+
+	if (!mas->cur_xfer)
+		return;
+	rx_buf = mas->cur_xfer->rx_buf;
+	while (rx_wc == 0 || (rx_last_byte != 0 && rx_last_byte != 4)) {
+		rx_fifo_status = geni_read_reg(mas->base, SE_GENI_RX_FIFO_STATUS);
+		rx_wc = (rx_fifo_status & RX_FIFO_WC_MSK);
+		rx_last_byte = (rx_fifo_status & RX_LAST_BYTE_VALID_MSK) >> RX_LAST_BYTE_VALID_SHFT;
+		rx_last = rx_fifo_status & RX_LAST;
+	}
+	fifo_word = geni_read_reg(mas->base, SE_GENI_RX_FIFOn);
+	fifo_byte = (u8 *)&fifo_word;
+	for (j = 0; j < 4; j++)
+		rx_buf[j] = fifo_byte[j];
+	mas->rx_rem_bytes -= 4;
+}
+
+static inline u32 readwritercb(struct spi_transfer *xfer,
+				struct spi_geni_master *mas, u16 mode,
+				struct spi_master *spi, u32 addr)
+{
+	u32 value;
+	static struct spi_transfer t;
+
+	memcpy(&t, xfer, sizeof(struct spi_transfer));
+	t.rx_buf = (u8 *)(u32 *)&value;
+	t.tx_buf = (u8 *)(u32 *)&addr;
+	fifo_cfg(&t, mas, mode, spi);
+	tx_cb(mas);
+	rx_cb(mas);
+	return value;
+}
+/* add by huawei for rsmc end */
+
 static int spi_geni_transfer_one(struct spi_master *spi,
 				struct spi_device *slv,
 				struct spi_transfer *xfer)
 {
 	int ret = 0;
+	/* add by huawei for rsmc begin */
+	u32 addr;
+	u32 value = 0;
+	/* add by huawei for rsmc end */
 	struct spi_geni_master *mas = spi_master_get_devdata(spi);
 	unsigned long timeout, xfer_timeout;
 
@@ -1670,6 +1815,20 @@ static int spi_geni_transfer_one(struct spi_master *spi,
 	}
 
 	if (mas->cur_xfer_mode != GSI_DMA) {
+		/* add by huawei for rsmc begin */
+		if (mas->loop_cb != NULL) {
+			disable_irq(mas->irq);
+			addr = mas->loop_cb(value);
+			value = readwritercb(xfer, mas, slv->mode, spi, addr);
+			for (addr = 0xffffffff; addr != 0;) {
+				addr = mas->loop_cb(value);
+				value = fifo_trs(mas, slv->mode, spi, addr);
+			}
+			enable_irq(mas->irq);
+			mas->loop_cb = NULL;
+		}
+		/* add by huawei for rsmc end */
+
 		reinit_completion(&mas->xfer_done);
 			ret = setup_fifo_xfer(xfer, mas, slv->mode, spi);
 		if (ret) {
@@ -1973,6 +2132,9 @@ static int spi_geni_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, spi);
 	geni_mas = spi_master_get_devdata(spi);
+	/* add by huawei for rsmc begin */
+	geni_mas->loop_cb = NULL;
+	/* add by huawei for rsmc end */
 	rsc = &geni_mas->spi_rsc;
 	geni_mas->dev = &pdev->dev;
 	spi->dev.of_node = pdev->dev.of_node;
@@ -2279,6 +2441,7 @@ static int spi_geni_runtime_resume(struct device *dev)
 		/* Return here as LE VM doesn't need resourc/clock management */
 		return ret;
 	}
+	GENI_SE_DBG(geni_mas->ipc, false, NULL, "%s:\n", __func__);
 
 	GENI_SE_DBG(geni_mas->ipc, false, NULL, "%s:\n", __func__);
 
@@ -2311,11 +2474,14 @@ static int spi_geni_suspend(struct device *dev)
 	struct spi_geni_master *geni_mas = spi_master_get_devdata(spi);
 
 	if (!pm_runtime_status_suspended(dev)) {
-		GENI_SE_ERR(geni_mas->ipc, true, dev,
+#ifdef CONFIG_HUAWEI_DSM
+		check_spi_idle_state(ktime_to_ms(ktime_get_real()));
+#endif
+				GENI_SE_ERR(geni_mas->ipc, true, dev,
 			":%s: runtime PM is active\n", __func__);
-		ret = -EBUSY;
+			ret = -EBUSY;
 		return ret;
-	}
+		}
 
 	GENI_SE_ERR(geni_mas->ipc, true, dev, ":%s: End\n", __func__);
 	return ret;

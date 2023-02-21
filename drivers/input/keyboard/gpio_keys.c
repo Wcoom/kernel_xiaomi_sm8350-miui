@@ -28,6 +28,7 @@
 #include <linux/of_irq.h>
 #include <linux/spinlock.h>
 #include <dt-bindings/input/gpio-keys.h>
+#include <huawei_platform/ap_hall/ext_hall_event.h>
 
 struct gpio_button_data {
 	const struct gpio_keys_button *button;
@@ -57,6 +58,9 @@ struct gpio_keys_drvdata {
 	unsigned short *keymap;
 	struct gpio_button_data data[0];
 };
+static bool is_support_fold_key = false;
+static unsigned long ext_fold_val_status = DEFALT_EXT_HALL_FOLD_STATUS;
+static int exchange_to_fold = DEFALT_EXT_HALL_FOLD_STATUS;
 
 /*
  * SYSFS interface for enabling/disabling keys and switches:
@@ -353,6 +357,11 @@ static struct attribute *gpio_keys_attrs[] = {
 };
 ATTRIBUTE_GROUPS(gpio_keys);
 
+static int get_ext_fold_status(void)
+{
+	return (int)ext_fold_val_status;
+}
+
 static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 {
 	const struct gpio_keys_button *button = bdata->button;
@@ -371,6 +380,18 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 		if (state)
 			input_event(input, type, button->code, button->value);
 	} else {
+		if (is_support_fold_key && *bdata->code == KEY_VOLUMEUP) {
+			if (state) {
+				pr_info("force update fold_status\n");
+				exchange_to_fold = get_ext_fold_status();
+			}
+			if (exchange_to_fold == 0)
+				input_event(input, type, KEY_VOLUMEDOWN, state);
+			else
+				input_event(input, type, KEY_VOLUMEUP, state);
+			input_sync(input);
+			return;
+		}
 		input_event(input, type, *bdata->code, state);
 	}
 	input_sync(input);
@@ -473,6 +494,20 @@ static void gpio_keys_quiesce_key(void *data)
 	else
 		del_timer_sync(&bdata->release_timer);
 }
+
+static int ext_fold_status_notifier_keyup(struct notifier_block *nb,
+	unsigned long foo, void *bar)
+{
+	(void)bar;
+	pr_info("%s recv fold status = %lu\n", __func__, foo);
+	ext_fold_val_status = foo;
+	return 0;
+}
+
+static struct notifier_block keyup_ext_fold_notify = {
+	.notifier_call = ext_fold_status_notifier_keyup,
+	.priority = -1,
+};
 
 static int gpio_keys_setup_key(struct platform_device *pdev,
 				struct input_dev *input,
@@ -744,7 +779,10 @@ gpio_keys_get_devtree_pdata(struct device *dev)
 
 		button->can_disable =
 			fwnode_property_read_bool(child, "linux,can-disable");
-
+		if (fwnode_property_read_bool(child, "is_support_fold_key")) {
+			dev_err(dev, "is_support_fold_key is available\n");
+			is_support_fold_key = true;
+		}
 		if (fwnode_property_read_u32(child, "debounce-interval",
 					 &button->debounce_interval))
 			button->debounce_interval = 5;
@@ -847,7 +885,11 @@ static int gpio_keys_probe(struct platform_device *pdev)
 	}
 
 	fwnode_handle_put(child);
-
+	if (is_support_fold_key) {
+		input_set_capability(input, EV_KEY, KEY_VOLUMEDOWN);
+		ext_fold_register_notifier(&keyup_ext_fold_notify);
+		dev_err(dev, "success load to input device\n");
+	}
 	error = input_register_device(input);
 	if (error) {
 		dev_err(dev, "Unable to register input device, error: %d\n",

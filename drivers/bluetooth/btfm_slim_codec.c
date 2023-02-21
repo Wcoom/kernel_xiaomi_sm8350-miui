@@ -223,7 +223,8 @@ static int btfm_slim_dai_set_channel_map(struct snd_soc_dai *dai,
 				unsigned int tx_num, unsigned int *tx_slot,
 				unsigned int rx_num, unsigned int *rx_slot)
 {
-	int ret = -EINVAL, i;
+	int ret = -EINVAL;
+	unsigned int i;
 	struct btfmslim *btfmslim = dai->dev->platform_data;
 	struct btfmslim_ch *rx_chs;
 	struct btfmslim_ch *tx_chs;

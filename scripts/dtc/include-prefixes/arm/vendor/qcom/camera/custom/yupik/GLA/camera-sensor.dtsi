@@ -1,0 +1,73 @@
+#include "camera-sensor-base.dtsi"
+#include "camera-sensor-7250b.dtsi"
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front tel senosr */
+	qcom,cam-sensor7 {
+		pinctrl-0 = <&cam_sensor_mclk1_active
+				&cam_sensor_active_rst1
+				&front_tel_dvdd_en_active
+				&front_tel_avdd_active>;
+		pinctrl-1 = <&cam_sensor_mclk1_suspend
+				&cam_sensor_suspend_rst1
+				&front_tel_dvdd_en_suspend
+				&front_tel_avdd_suspend>;
+		gpios = <&tlmm 65 0>, /* mclk1 gpio 65 */
+			<&tlmm 21 0>, /* reset1 gpio 21 */
+			<&tlmm 138 0>, /* mcam_avdd gpio 138 */
+			<&tlmm 1 0>, /* mcam_iodd gpio 1 */
+			<&tlmm 2 0>, /* mcam_dvdd gpio 2 */
+			/* mcam_dvdd en pm7250b gpio 2, ov08c10 is low, hi847 is high */
+			<&pm7250b_gpios 2 0>,
+			<&tlmm 4 0>, /* afvdd 7315 gpio 4 */
+			<&pm7250b_gpios 4 0>; /* mcam_avdd pm7250b gpio 4 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-mixed4 = <5>;
+		gpio-mixed5 = <6>;
+		gpio-custom1 = <7>;
+		gpio-req-tbl-num = <0 1 2 3 4 5 6 7>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK1",
+					"CAM_RESET1",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3",
+					"CAM_MIXED4",
+					"CAM_MIXED5",
+					"CAM_CUSTOM1";
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear wide senosr */
+	qcom,cam-sensor6 {
+		pinctrl-0 = <&cam_sensor_active_rst3
+				&rear_wide_avdd_active>;
+		pinctrl-1 = <&cam_sensor_suspend_rst3
+				&rear_wide_avdd_suspend>;
+		gpios = <&tlmm 67 0>, /* mclk3 gpio 67 */
+			<&tlmm 78 0>, /* reset3 gpio 78 */
+			<&tlmm 138 0>, /* mcam_avdd gpio 138 */
+			<&tlmm 1 0>, /* mcam_iovdd gpio 1 */
+			<&tlmm 4 0>, /* afvdd 7315 gpio 4 */
+			<&pm7250b_gpios 6 0>; /* mcam_avdd pm7250b gpio 6 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-mixed5 = <5>;
+		gpio-req-tbl-num = <0 1 2 3 4 5>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK3",
+					"CAM_RESET3",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3",
+					"CAM_MIXED5";
+	};
+};

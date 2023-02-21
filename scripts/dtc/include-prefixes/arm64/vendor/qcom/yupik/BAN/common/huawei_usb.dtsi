@@ -1,0 +1,6 @@
+&huawei_pd {
+	src_vconn = <3>; /* pmic */
+	src_vbus = <3>; /* pmic */
+	otg_ocp_check_enable = <1>;
+	cc_dynamic_protect = <2>;
+};

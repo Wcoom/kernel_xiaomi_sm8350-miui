@@ -1,0 +1,20 @@
+config DFX_MEMCHECK
+	depends on HW_LOGGER
+	bool "DFX memory checker module"
+	default n
+	---help---
+	  This feature support to memory leak check
+
+config DFX_MEMCHECK_DETAIL
+	depends on DFX_MEMCHECK
+	bool "DFX memory checker detail info module"
+	default n
+	---help---
+	  This feature support to get detailed mem info
+
+config DFX_MEMCHECK_STACK
+	depends on DFX_MEMCHECK
+	bool "DFX memory checker stack info module"
+	default n
+	---help---
+	  This feature support to get stack info

@@ -143,7 +143,7 @@ static int btsdio_rx_packet(struct btsdio_data *data)
 		return err;
 	}
 
-	data->hdev->stat.byte_rx += len;
+	data->hdev->stat.byte_rx += (uint32_t)len;
 
 	hci_skb_pkt_type(skb) = hdr[3];
 
@@ -164,7 +164,7 @@ static void btsdio_interrupt(struct sdio_func *func)
 	BT_DBG("%s", data->hdev->name);
 
 	intrd = sdio_readb(func, REG_INTRD, NULL);
-	if (intrd & 0x01) {
+	if ((unsigned int)intrd & 0x01) {
 		sdio_writeb(func, 0x01, REG_CL_INTRD, NULL);
 
 		if (btsdio_rx_packet(data) < 0) {
@@ -271,8 +271,6 @@ static int btsdio_probe(struct sdio_func *func,
 	struct sdio_func_tuple *tuple = func->tuples;
 	int err;
 
-	BT_DBG("func %p id %p class 0x%04x", func, id, func->class);
-
 	while (tuple) {
 		BT_DBG("code 0x%x size %d", tuple->code, tuple->size);
 		tuple = tuple->next;
@@ -340,8 +338,6 @@ static void btsdio_remove(struct sdio_func *func)
 {
 	struct btsdio_data *data = sdio_get_drvdata(func);
 	struct hci_dev *hdev;
-
-	BT_DBG("func %p", func);
 
 	if (!data)
 		return;

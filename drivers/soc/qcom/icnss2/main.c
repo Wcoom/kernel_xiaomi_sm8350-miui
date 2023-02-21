@@ -69,7 +69,11 @@
 #define ICNSS_QUIRKS_DEFAULT		BIT(FW_REJUVENATE_ENABLE)
 #define ICNSS_MAX_PROBE_CNT		2
 
+#ifdef CONFIG_HUAWEI_WIFI
+#define ICNSS_BDF_TYPE_DEFAULT         ICNSS_BDF_BIN
+#else
 #define ICNSS_BDF_TYPE_DEFAULT         ICNSS_BDF_ELF
+#endif
 
 #define PROBE_TIMEOUT                 15000
 #define WLFW_TIMEOUT			msecs_to_jiffies(3000)
@@ -657,8 +661,8 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 		}
 
 		priv->mem_base_va = devm_ioremap(&priv->pdev->dev,
-						 priv->mem_base_pa,
-						 priv->mem_base_size);
+							 priv->mem_base_pa,
+							 priv->mem_base_size);
 		if (!priv->mem_base_va) {
 			icnss_pr_err("Ioremap failed for bar address\n");
 			goto device_info_failure;
@@ -1209,12 +1213,14 @@ out:
 static int icnss_fw_crashed(struct icnss_priv *priv,
 			    struct icnss_event_pd_service_down_data *event_data)
 {
-	icnss_pr_dbg("FW crashed, state: 0x%lx\n", priv->state);
+	bool is_restart_in_progress = test_bit(ICNSS_PD_RESTART, &priv->state);
+	icnss_pr_err("FW crashed, state: 0x%lx\n", priv->state);
 
 	set_bit(ICNSS_PD_RESTART, &priv->state);
 	clear_bit(ICNSS_FW_READY, &priv->state);
 
-	icnss_pm_stay_awake(priv);
+	if (!is_restart_in_progress)
+		icnss_pm_stay_awake(priv);
 
 	if (test_bit(ICNSS_DRIVER_PROBED, &priv->state))
 		icnss_call_driver_uevent(priv, ICNSS_UEVENT_FW_CRASHED, NULL);
@@ -1566,9 +1572,9 @@ static void icnss_soc_wake_msg_work(struct work_struct *work)
 		spin_unlock_irqrestore(&priv->soc_wake_msg_lock, flags);
 
 		icnss_pr_soc_wake("Processing event: %s%s(%d), state: 0x%lx\n",
-				  icnss_soc_wake_event_to_str(event->type),
-				  event->sync ? "-sync" : "", event->type,
-				  priv->state);
+			     icnss_soc_wake_event_to_str(event->type),
+			     event->sync ? "-sync" : "", event->type,
+			     priv->state);
 
 		switch (event->type) {
 		case ICNSS_SOC_WAKE_REQUEST_EVENT:
@@ -1588,9 +1594,9 @@ static void icnss_soc_wake_msg_work(struct work_struct *work)
 		priv->stats.soc_wake_events[event->type].processed++;
 
 		icnss_pr_soc_wake("Event Processed: %s%s(%d), ret: %d, state: 0x%lx\n",
-				  icnss_soc_wake_event_to_str(event->type),
-				  event->sync ? "-sync" : "", event->type, ret,
-				  priv->state);
+			     icnss_soc_wake_event_to_str(event->type),
+			     event->sync ? "-sync" : "", event->type, ret,
+			     priv->state);
 
 		spin_lock_irqsave(&priv->soc_wake_msg_lock, flags);
 		if (event->sync) {
@@ -2761,7 +2767,7 @@ int icnss_force_wake_request(struct device *dev)
 
 	if (atomic_inc_not_zero(&priv->soc_wake_ref_count)) {
 		icnss_pr_soc_wake("SOC already awake, Ref count: %d",
-				  atomic_read(&priv->soc_wake_ref_count));
+			     atomic_read(&priv->soc_wake_ref_count));
 		return 0;
 	}
 
@@ -2793,7 +2799,7 @@ int icnss_force_wake_release(struct device *dev)
 	if (atomic_read(&priv->soc_wake_ref_count) &&
 	    icnss_atomic_dec_if_greater_one(&priv->soc_wake_ref_count)) {
 		icnss_pr_soc_wake("SOC previous release pending, Ref count: %d",
-				  atomic_read(&priv->soc_wake_ref_count));
+			     atomic_read(&priv->soc_wake_ref_count));
 		return 0;
 	}
 

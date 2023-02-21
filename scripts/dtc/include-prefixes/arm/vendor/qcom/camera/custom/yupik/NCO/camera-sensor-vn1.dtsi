@@ -1,0 +1,167 @@
+#include "camera-sensor-v4.dtsi"
+
+&tlmm {
+	mcam_avdd2v85_gpio4_active: mcam_avdd2v85_gpio4_active {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	mcam_avdd2v85_gpio4_suspend: mcam_avdd2v85_gpio4_suspend {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio4";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio4";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+
+	mcam_avdd2v85_gpio139_active: mcam_avdd2v85_gpio139_active {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio139";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio139";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	mcam_avdd2v85_gpio139_suspend: mcam_avdd2v85_gpio139_suspend {
+		/* mcam_avdd */
+		mux {
+			pins = "gpio139";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio139";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+
+	mcam_dvdd_gpio137_active: mcam_dvdd_gpio137_active {
+		/* mcam_dvdd */
+		mux {
+			pins = "gpio137";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio137";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+
+	mcam_dvdd_gpio137_suspend: mcam_dvdd_gpio137_suspend {
+		/* mcam_dvdd */
+		mux {
+			pins = "gpio137";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio137";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front main senosr */
+	qcom,cam-sensor1 {
+		pinctrl-0 = <&cam_sensor_mclk0_active
+				&cam_sensor_active_rst0
+				&mcam_ponv_active
+				&mcam_avdd2v85_gpio139_active
+				&mcam_dvdd_gpio137_active>;
+		pinctrl-1 = <&cam_sensor_mclk0_suspend
+				&cam_sensor_suspend_rst0
+				&mcam_ponv_suspend
+				&mcam_avdd2v85_gpio139_suspend
+				&mcam_dvdd_gpio137_suspend>;
+		gpios = <&tlmm 64 0>, /* mclk0 gpio 64 */
+			<&tlmm 20 0>, /* reset0 gpio 20 */
+			<&tlmm 138 0>, /* ponv gpio 138 */
+			<&tlmm 25 0>, /*mcam_dvdd gpio 25 1.167v */
+			<&tlmm 79 0>, /*mcam_avdd2v85 gpio 79 */
+			<&tlmm 139 0>, /* mcam_avdd2v85 gpio 139 */
+			<&tlmm 137 0>; /*mcam_dvdd gpio 137 1.167v */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-mixed4 = <5>;
+		gpio-mixed5 = <6>;
+		gpio-req-tbl-num = <0 1 2 3 4 5 6>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK0",
+					"CAM_RESET0",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3",
+					"CAM_MIXED4",
+					"CAM_MIXED5";
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear main senosr */
+	qcom,cam-sensor0 {
+		pinctrl-0 = <&cam_sensor_mclk2_active
+				&cam_sensor_active_rst2
+				&mcam_avdd2v85_gpio4_active>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend
+				&cam_sensor_suspend_rst2
+				&mcam_avdd2v85_gpio4_suspend>;
+		gpios = <&tlmm 66 0>, /* mclk2 gpio 66 */
+			<&tlmm 77 0>, /* reset2 gpio 77 */
+			<&tlmm 18 0>, /*rear_mcam_avdd 1.8v gpio 18 */
+			<&tlmm 0 0>,  /*mcam_iovdd gpio 0 */
+			<&tlmm 25 0>, /*mcam_dvdd gpio 25 */
+			<&tlmm 2 0>, /* mcam_afvdd gpio 2 */
+			<&tlmm 79 0>, /* mcam_avdd2v85 gpio 79 */
+			<&tlmm 4 0>; /* mcam_avdd2v85 gpio 4 */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed2 = <3>;
+		gpio-mixed3 = <4>;
+		gpio-mixed4 = <5>;
+		gpio-mixed5 = <6>;
+		gpio-custom1 = <7>;
+		gpio-req-tbl-num = <0 1 2 3 4 5 6 7>;
+		gpio-req-tbl-flags = <1 0 0 0 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK2",
+					"CAM_RESET2",
+					"CAM_MIXED1",
+					"CAM_MIXED2",
+					"CAM_MIXED3",
+					"CAM_MIXED4",
+					"CAM_MIXED5",
+					"CAM_CUSTOM1";
+	};
+};

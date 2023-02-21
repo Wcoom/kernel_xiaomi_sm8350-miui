@@ -1,0 +1,110 @@
+#include "../../../lcdkit3.0/pal/devkit_lcd_kit.dtsi"
+&huawei_lcd_panel {
+	compatible = "huawei,lcd_panel_type";
+	/* auto_key_info @ name: product_id type: uint32 default: 0 */
+	product_id = <3001>;
+	detect_type = <2>;
+	/* auto_key_info @ name: lcd_kit_power_ctrl type: uint32 default: 0 */
+	lcd_kit_power_ctrl = <1>;
+	/* iovcc_ctrl: byte-1:power mode(1:ldo, 2:gpio), byte-2: pmic id,  byte-3: ldo id, byte-4: ldo value, byte-5: delay */
+	/* auto_key_info @ name: iovcc_ctrl[5] type: uint32 default: 0 */
+	iovcc_ctrl = <1 2 12 1850 10>;
+	/* auto_key_info @ name: gpio_id[2] type: int default: 0 */
+	gpio_id = <20 21>;
+	/* auto_key_info @ name: pmic_gpio type: uint32 default: 0 */
+	pmic_gpio = <124>;
+	support_lcd_type = "LCD_KIT";
+};
+
+&huawei_sec_lcd_panel {
+	/* auto_key_info @ name: sec_gpio_id[2] type: int default: 0 */
+	sec_gpio_id = <0 0>;
+	/* auto_key_info @ name: sec_te_gpio type: int default: 0 */
+	sec_te_gpio = <0>;
+	/* auto_key_info @ name: sec_lcd_reset_gpio type: int default: 0 */
+	sec_lcd_reset_gpio = <0>;
+	/* auto_key_info @ name: sec_panel_fb_base type: UINTN default: 0 */
+	sec_panel_fb_base = <0>;
+	/* auto_key_info @ name: sec_iovcc_ctrl[5] type: uint32 default: 0 */
+	sec_iovcc_ctrl = <0 0 0 0 0>;
+};
+
+&dsi_pal_190_207_1_7p8_qcom {
+	lcd-kit,boost-5v-enable = <1>;
+        qcom,mdss-dsi-display-timings {
+                timing@0 {
+                        qcom,mdss-mdp-transfer-time-us = <14666>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+
+                timing@1 {
+                        qcom,mdss-mdp-transfer-time-us = <9111>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+
+                timing@2 {
+                        qcom,mdss-mdp-transfer-time-us = <6333>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+        };
+};
+
+&dsi_pal_190_207_2_7p8_qcom {
+	lcd-kit,boost-5v-enable = <1>;
+        qcom,mdss-dsi-display-timings {
+                timing@0 {
+                        qcom,mdss-mdp-transfer-time-us = <14666>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+
+                timing@1 {
+                        qcom,mdss-mdp-transfer-time-us = <9111>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+
+                timing@2 {
+                        qcom,mdss-mdp-transfer-time-us = <6333>;
+                        qcom,mdss-dsi-panel-jitter = <0x5 0x1>;
+                        qcom,mdss-dsi-fold-command = [15 00 00 00 00 00 02 84 01
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-fold-command-state = "dsi_hs_mode";
+                        qcom,mdss-dsi-unfold-command = [15 00 00 00 00 00 02 84 03
+                                                05 01 00 00 00 00 01 6C];
+                        qcom,mdss-dsi-unfold-command-state = "dsi_hs_mode";
+                };
+        };
+};
+
+&sde_dsi {
+	qcom,dsi-default-panel = <&dsi_pal_auo_otm1901a_5p2_1080p_video_default>;
+};

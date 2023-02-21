@@ -10,6 +10,11 @@
 #include <linux/regulator/consumer.h>
 #include <linux/slab.h>
 #include <linux/thermal.h>
+#include <linux/msm_kgsl.h>
+
+#ifdef CONFIG_GPU_FREQ_STAT
+#include <linux/gpu_hook.h>
+#endif
 
 #include "kgsl_device.h"
 #include "kgsl_bus.h"
@@ -292,6 +297,10 @@ static void kgsl_pwrctrl_set_thermal_pwrlevel(struct kgsl_device *device,
 		u32 level)
 {
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
+#ifdef CONFIG_HW_IPA_THERMAL
+	int gpu_id;
+	unsigned int ipa_state;
+#endif
 
 	mutex_lock(&device->mutex);
 
@@ -301,6 +310,16 @@ static void kgsl_pwrctrl_set_thermal_pwrlevel(struct kgsl_device *device,
 	pwr->sysfs_thermal_pwrlevel = level;
 	pwr->thermal_pwrlevel = max(pwr->cooling_thermal_pwrlevel, pwr->sysfs_thermal_pwrlevel);
 
+#ifdef CONFIG_HW_IPA_THERMAL
+	gpu_id = ipa_get_actor_id("gpu");
+	if (gpu_id < 0) {
+		pr_err("[Adreno]Failed to get ipa actor id for gpu\n");
+	} else {
+		ipa_state = ipa_state_limit(gpu_id);
+		if (level < ipa_state)
+			level = ipa_state;
+	}
+#endif
 	/* Update the current level using the new limit */
 	kgsl_pwrctrl_pwrlevel_change(device, pwr->active_pwrlevel);
 	mutex_unlock(&device->mutex);
@@ -2299,3 +2318,42 @@ int kgsl_gpu_stat(struct kgsl_gpu_freq_stat *stats, u32 numfreq)
 	return 0;
 }
 EXPORT_SYMBOL(kgsl_gpu_stat);
+
+#ifdef CONFIG_GPU_FREQ_STAT
+int perf_ctrl_get_gpu_freq_stats(void __user *uarg)
+{
+	struct gpu_freq_stats freq_stats;
+	int nr_freqs;
+	int ret;
+
+	if (uarg == NULL)
+		return -EINVAL;
+
+	nr_freqs = kgsl_gpu_num_freqs();
+	if (nr_freqs < 0) {
+		pr_err("%s: get nr_freqs fail, ret=%d\n", __func__, nr_freqs);
+		return -ENODEV;
+	} else if (nr_freqs == 0) {
+		pr_err("%s: get nr_freqs fail, nr_freqs is zero\n", __func__);
+		return -EINVAL;
+	} else if (nr_freqs > KGSL_MAX_PWRLEVELS) {
+		pr_err("%s: get nr_freqs fail, nr_freqs exceed the maximum\n", __func__);
+		return -EINVAL;
+	}
+
+	freq_stats.kgsl_freq_stats.nr_freqs = (u32)nr_freqs;
+
+	ret = kgsl_gpu_stat(freq_stats.kgsl_freq_stats.stats_list, nr_freqs);
+	if (ret != 0) {
+		pr_err("%s: kgsl_gpu_stat fail, ret=%d\n", __func__, ret);
+		return ret;
+	}
+
+	if (copy_to_user(uarg, &freq_stats, sizeof(struct gpu_freq_stats))) {
+		pr_err("%s: copy_to_user fail\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+#endif

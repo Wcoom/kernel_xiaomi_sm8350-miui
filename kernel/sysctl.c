@@ -100,11 +100,24 @@
 #ifdef CONFIG_LOCKUP_DETECTOR
 #include <linux/nmi.h>
 #endif
+#ifdef CONFIG_HW_FUTEX_PI
+#include <chipset_common/linux/hw_pi.h>
+#endif
+
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+#include <linux/protect_lru.h>
+#endif
+#ifdef CONFIG_HW_MM_POLICY
+#include <chipset_common/linux/mm_policy.h>
+#endif
 
 #if defined(CONFIG_SYSCTL)
 
 /* External variables not in a header file. */
 extern int suid_dumpable;
+#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
+extern int direct_vm_swappiness;
+#endif
 #ifdef CONFIG_COREDUMP
 extern int core_uses_pid;
 extern char core_pattern[];
@@ -120,19 +133,57 @@ extern unsigned int sysctl_nr_open_min, sysctl_nr_open_max;
 extern int sysctl_nr_trim_pages;
 #endif
 
+#ifdef CONFIG_HW_GRADED_SCHED
+#include <linux/hw_graded_sched/hw_graded_sched.h>
+
+static int sysctl_graded_sched = 0;
+
+static int graded_sched_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int error = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	if (write && !error)
+		set_grade_switch((bool)sysctl_graded_sched);
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_HW_CGROUP_RTG
+#include <linux/sched/hw_rtg/rtg_cgroup.h>
+
+static int sysctl_cgroup_rtg_switch = 0;
+
+static int cgroup_rtg_switch_handler(struct ctl_table *table, int write,
+				void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	int error = proc_dointvec_minmax(table, write, buffer, lenp, ppos);
+
+	if (write && !error)
+		set_cgroup_rtg_switch((bool)sysctl_cgroup_rtg_switch);
+
+	return 0;
+}
+#endif
+
 /* Constants used for minimum and  maximum */
 #ifdef CONFIG_LOCKUP_DETECTOR
 static int sixty = 60;
 #endif
 
 static int __maybe_unused neg_one = -1;
-
+static int __maybe_unused zero = 0;
+static int __maybe_unused one = 1;
 static int __maybe_unused two = 2;
 static int __maybe_unused four = 4;
 static unsigned long zero_ul;
 static unsigned long one_ul = 1;
 static unsigned long long_max = LONG_MAX;
 static int one_hundred = 100;
+#if defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
+static int two_hundred = 200;
+#endif
 static int one_thousand = 1000;
 #ifdef CONFIG_QCOM_HYP_CORE_CTL
 static int five_hundred = 500;
@@ -165,6 +216,9 @@ static unsigned int two_hundred_million = 200000000;
 static unsigned int min_cfs_boost_prio = 99;
 static unsigned int max_cfs_boost_prio = 119;
 #endif
+#ifdef CONFIG_HW_SCHED_WALT
+#include "sched/hw_walt/walt_hw.h"
+#endif
 
 /* this is needed for the proc_doulongvec_minmax of vm_dirty_bytes */
 static unsigned long dirty_bytes_min = 2 * PAGE_SIZE;
@@ -175,7 +229,9 @@ static int minolduid;
 
 static int ngroups_max = NGROUPS_MAX;
 static const int cap_last_cap = CAP_LAST_CAP;
-
+#ifdef CONFIG_HW_MM_POLICY
+static unsigned int hw_mm_policy __read_mostly;
+#endif
 /*
  * This is needed for proc_doulongvec_minmax of sysctl_hung_task_timeout_secs
  * and hung_task_check_interval_secs
@@ -338,9 +394,23 @@ static int max_sched_tunable_scaling = SCHED_TUNABLESCALING_END-1;
 #endif /* CONFIG_SMP */
 #endif /* CONFIG_SCHED_DEBUG */
 
+#ifdef CONFIG_HW_VIP_THREAD
+static int min_sched_delay_granularity;
+static int max_sched_delay_granularity = 16;
+static int min_dynamic_vip_granularity;
+static int max_dynamic_vip_granularity = 32;
+static int min_migration_delay_granularity;
+static int max_migration_delay_granulartiy = 16;
+#endif
+
 #ifdef CONFIG_COMPACTION
 static int min_extfrag_threshold;
 static int max_extfrag_threshold = 1000;
+
+#ifdef CONFIG_HW_PROACTIVE_COMPACT
+static unsigned int min_compact_order = PAGE_ALLOC_COSTLY_ORDER;
+static unsigned int max_compact_order = MAX_ORDER;
+#endif
 #endif
 
 static struct ctl_table kern_table[] = {
@@ -351,6 +421,62 @@ static struct ctl_table kern_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,
 	},
+#ifdef CONFIG_BOOST_KILL
+	{
+		.procname       = "boost_killing",
+		.data           = &sysctl_boost_killing,
+		.maxlen         = sizeof(int),
+		.mode           = 0644,
+		.proc_handler   = proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_HW_VIP_THREAD
+	{
+		.procname   = "vip_min_sched_delay_granularity",
+		.data       = &vip_min_sched_delay_granularity,
+		.maxlen     = sizeof(int),
+		.mode       = 0644,
+		.proc_handler = proc_dointvec_minmax,
+		.extra1     = &min_sched_delay_granularity,
+		.extra2     = &max_sched_delay_granularity,
+	},
+	{
+		.procname   = "vip_max_dynamic_granularity",
+		.data       = &vip_max_dynamic_granularity,
+		.maxlen     = sizeof(int),
+		.mode       = 0644,
+		.proc_handler = proc_dointvec_minmax,
+		.extra1     = &min_dynamic_vip_granularity,
+		.extra2     = &max_dynamic_vip_granularity,
+	},
+	{
+		.procname   = "vip_min_migration_delay",
+		.data       = &vip_min_migration_delay,
+		.maxlen     = sizeof(int),
+		.mode       = 0644,
+		.proc_handler = proc_dointvec_minmax,
+		.extra1     = &min_migration_delay_granularity,
+		.extra2     = &max_migration_delay_granulartiy,
+	},
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	{
+		.procname     = "qos_sched",
+		.data         = &g_sysctl_qos_sched,
+		.maxlen       = sizeof(unsigned int),
+		.mode         = 0644,
+		.proc_handler = proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_HW_FUTEX_PI
+	{
+		.procname     = "hw_futex_pi_enabled",
+		.data         = &g_hw_futex_pi_enabled,
+		.maxlen       = sizeof(unsigned int),
+		.mode         = S_IRUSR | S_IWUSR,
+		.proc_handler = proc_douintvec,
+	},
+#endif
 #ifdef CONFIG_QCOM_HYP_CORE_CTL
 	{
 		.procname	= "hh_suspend_timeout_ms",
@@ -615,6 +741,15 @@ static struct ctl_table kern_table[] = {
 	},
 
 #endif
+#ifdef CONFIG_CX_POWER_OPTIMIZE
+	{
+		.procname	= "uniperf_cx_optimize",
+		.data 		= &uniperf_cx_optimize,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler   = proc_dointvec,
+	},
+#endif
 	{
 		.procname	= "sched_force_lb_enable",
 		.data		= &sysctl_sched_force_lb_enable,
@@ -624,6 +759,62 @@ static struct ctl_table kern_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_ONE,
 	},
+#ifdef CONFIG_HW_SCHED_WALT
+	{
+		.procname	= "sched_use_walt_cpu_util",
+		.data		= &sysctl_sched_use_walt_cpu_util,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_use_walt_task_util",
+		.data		= &sysctl_sched_use_walt_task_util,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "sched_walt_init_task_load_pct",
+		.data		= &sysctl_sched_walt_init_task_load_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= sysctl_sched_walt_init_task_load_pct_sysctl_handler,
+	},
+	{
+		.procname	= "sched_walt_cpu_overload_irqload",
+		.data		= &sysctl_sched_walt_cpu_overload_irqload,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_HW_GRADED_SCHED
+	{
+		.procname     = "graded_sched",
+		.data         = &sysctl_graded_sched,
+		.maxlen       = sizeof(int),
+		.mode         = 0644,
+		.proc_handler = graded_sched_handler,
+		.extra1       = &zero,
+		.extra2       = &one,
+	},
+#endif
+#ifdef CONFIG_HW_CGROUP_RTG
+	{
+		.procname     = "cgroup_rtg_switch",
+		.data         = &sysctl_cgroup_rtg_switch,
+		.maxlen       = sizeof(int),
+		.mode         = 0644,
+		.proc_handler = cgroup_rtg_switch_handler,
+		.extra1       = &zero,
+		.extra2       = &one,
+	},
+#endif
 #ifdef CONFIG_SCHED_DEBUG
 	{
 		.procname	= "sched_min_granularity_ns",
@@ -652,6 +843,33 @@ static struct ctl_table kern_table[] = {
 		.extra1		= &min_wakeup_granularity_ns,
 		.extra2		= &max_wakeup_granularity_ns,
 	},
+#ifdef CONFIG_RENDER_RT_DEBUG
+	{
+		.procname	= "sched_enable_render_rt_trace",
+		.data		= &sysctl_sched_enable_render_rt_trace,
+		.maxlen 	= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_HW_RT_CAS
+	{
+		.procname	= "sched_enable_rt_cas",
+		.data		= &sysctl_sched_enable_rt_cas,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
+#ifdef CONFIG_HW_RT_ACTIVE_LB
+	{
+		.procname	= "sched_enable_rt_active_lb",
+		.data		= &sysctl_sched_enable_rt_active_lb,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 #ifdef CONFIG_SMP
 	{
 		.procname	= "sched_tunable_scaling",
@@ -1220,6 +1438,15 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &two,
 	},
 #endif
+#ifdef CONFIG_TCP_ARGO
+	{
+		.procname	= "argo_log_mask",
+		.data		= &sysctl_argo_log_mask,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+#endif
 	{
 		.procname	= "ngroups_max",
 		.data		= &ngroups_max,
@@ -1676,7 +1903,7 @@ static struct ctl_table vm_table[] = {
 		.proc_handler	= overcommit_kbytes_handler,
 	},
 	{
-		.procname	= "page-cluster", 
+		.procname	= "page-cluster",
 		.data		= &page_cluster,
 		.maxlen		= sizeof(int),
 		.mode		= 0644,
@@ -1747,8 +1974,23 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
+#if defined(CONFIG_HUAWEI_DIRECT_SWAPPINESS)
+		.extra2		= &two_hundred,
+#else
 		.extra2		= &one_hundred,
+#endif
 	},
+#ifdef CONFIG_HUAWEI_DIRECT_SWAPPINESS
+	{
+		.procname	= "direct_swappiness",
+		.data		= &direct_vm_swappiness,
+		.maxlen		= sizeof(direct_vm_swappiness),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two_hundred,
+	},
+#endif
 	{
 		.procname       = "want_old_faultaround_pte",
 		.data           = &want_old_faultaround_pte,
@@ -1815,6 +2057,24 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ONE,
 		.extra2		= &four,
 	},
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+	/*lint -save -e785*/
+	{
+		.procname	= "protect_lru",
+		.mode		= 0440,
+		.child		= protect_lru_table,
+	},
+	/*lint -restore*/
+#endif
+#ifdef CONFIG_HW_MM_POLICY
+	{
+		.procname	= "hw_mm_policy",
+		.data		= &hw_mm_policy,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH,
+		.proc_handler	= proc_douintvec,
+	},
+#endif
 #ifdef CONFIG_COMPACTION
 	{
 		.procname	= "compact_memory",
@@ -1823,6 +2083,37 @@ static struct ctl_table vm_table[] = {
 		.mode		= 0200,
 		.proc_handler	= sysctl_compaction_handler,
 	},
+#ifdef CONFIG_COMPACTION_PROACTIVE
+	{
+		.procname	= "compaction_proactiveness",
+		.data		= &sysctl_compaction_proactiveness,
+		.maxlen		= sizeof(sysctl_compaction_proactiveness),
+		.mode		= 0644,
+		.proc_handler	= compaction_proactiveness_sysctl_handler,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &one_hundred,
+	},
+#ifdef CONFIG_HW_PROACTIVE_COMPACT
+	{
+		.procname	= "compact_loop_allowed",
+		.data		= &sysctl_compact_loop_allowed,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "compact_proactive_order",
+		.data		= &sysctl_compact_proactive_order,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec_minmax,
+		.extra1		= &min_compact_order,
+		.extra2		= &max_compact_order,
+	},
+#endif
+#endif
 	{
 		.procname	= "extfrag_threshold",
 		.data		= &sysctl_extfrag_threshold,
@@ -2222,7 +2513,7 @@ static struct ctl_table fs_table[] = {
 		.mode		= 0555,
 		.child		= inotify_table,
 	},
-#endif	
+#endif
 #ifdef CONFIG_EPOLL
 	{
 		.procname	= "epoll",
@@ -2703,12 +2994,12 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 	int *i, vleft, first = 1, err = 0;
 	size_t left;
 	char *kbuf = NULL, *p;
-	
+
 	if (!tbl_data || !table->maxlen || !*lenp || (*ppos && !write)) {
 		*lenp = 0;
 		return 0;
 	}
-	
+
 	i = (int *) tbl_data;
 	vleft = table->maxlen / sizeof(*i);
 	left = *lenp;
@@ -2934,7 +3225,7 @@ static int do_proc_douintvec(struct ctl_table *table, int write,
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  *
  * Returns 0 on success.
  */
@@ -3429,7 +3720,7 @@ static int do_proc_dointvec_ms_jiffies_conv(bool *negp, unsigned long *lvalp,
  * @ppos: file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
+ * values from/to the user buffer, treated as an ASCII string.
  * The values read are assumed to be in seconds, and are converted into
  * jiffies.
  *
@@ -3451,8 +3742,8 @@ int proc_dointvec_jiffies(struct ctl_table *table, int write,
  * @ppos: pointer to the file position
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
- * The values read are assumed to be in 1/USER_HZ seconds, and 
+ * values from/to the user buffer, treated as an ASCII string.
+ * The values read are assumed to be in 1/USER_HZ seconds, and
  * are converted into jiffies.
  *
  * Returns 0 on success.
@@ -3474,8 +3765,8 @@ int proc_dointvec_userhz_jiffies(struct ctl_table *table, int write,
  * @ppos: the current position in the file
  *
  * Reads/writes up to table->maxlen/sizeof(unsigned int) integer
- * values from/to the user buffer, treated as an ASCII string. 
- * The values read are assumed to be in 1/1000 seconds, and 
+ * values from/to the user buffer, treated as an ASCII string.
+ * The values read are assumed to be in 1/1000 seconds, and
  * are converted into jiffies.
  *
  * Returns 0 on success.
@@ -3848,6 +4139,13 @@ int proc_do_static_key(struct ctl_table *table, int write,
 	}
 	mutex_unlock(&static_key_mutex);
 	return ret;
+}
+#endif
+
+#ifdef CONFIG_HW_MM_POLICY
+unsigned int get_hw_mm_policy()
+{
+	return hw_mm_policy;
 }
 #endif
 /*

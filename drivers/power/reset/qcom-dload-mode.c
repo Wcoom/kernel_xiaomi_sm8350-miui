@@ -15,6 +15,10 @@
 #include <linux/pm.h>
 #include <linux/qcom_scm.h>
 #include <soc/qcom/minidump.h>
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
+
+DEFINE_TRACE(cmd_himntn_item_switch);
 
 enum qcom_download_dest {
 	QCOM_DOWNLOAD_DEST_UNKNOWN = -1,
@@ -39,6 +43,50 @@ static bool enable_dump =
 	IS_ENABLED(CONFIG_POWER_RESET_QCOM_DOWNLOAD_MODE_DEFAULT);
 static enum qcom_download_mode current_download_mode = QCOM_DOWNLOAD_NODUMP;
 static enum qcom_download_mode dump_mode = QCOM_DOWNLOAD_FULLDUMP;
+
+#ifdef CONFIG_RAINBOW_AUTO_SET_DLOAD_MODE
+int fusion_type;
+int apdp_switch;
+enum FUSION_TYPE {
+	FUSION_TYPE_NONE = 0,
+	FUSION_TYPE_SECOND = 2,
+	FUSION_TYPE_FIRST = 3,
+};
+
+static int __init oem_pk_hash_parse_early_cmdline(char *p)
+{
+	char buf[8] = {0};
+	if (!p) {
+		pr_err("cmdline oem_pk_hash not exist\n");
+		return 0;
+	}
+
+	buf[0] = p[strlen(p) - 1];
+	kstrtouint(buf, 10, &fusion_type);
+	pr_err("oem_pk_hash_parse_early_cmdline fusion_type is %d\n", fusion_type);
+	return 0;
+}
+early_param("oem_pk_hash", oem_pk_hash_parse_early_cmdline);
+
+static int __init apdp_pk_hash_parse_early_cmdline(char *p)
+{
+	unsigned int i;
+	if (!p) {
+		pr_err("cmdline oem_pk_hash not exist\n");
+		return 0;
+	}
+
+	for (i = 0; i < strlen(p); i++) {
+		if (p[i] != '0') {
+			apdp_switch = 1;
+			break;
+		}
+	}
+	pr_err("apdp_pk_hash_parse_early_cmdline apdp_switch is %d\n", apdp_switch);
+	return 0;
+}
+early_param("apdp_pk_hash", apdp_pk_hash_parse_early_cmdline);
+#endif
 
 static int set_download_mode(enum qcom_download_mode mode)
 {
@@ -213,6 +261,7 @@ static ssize_t dload_mode_store(struct kobject *kobj,
 				const char *buf, size_t count)
 {
 	enum qcom_download_mode mode;
+	bool is_cmd_himntn = false;
 
 	if (sysfs_streq(buf, "full"))
 		mode = QCOM_DOWNLOAD_FULLDUMP;
@@ -225,6 +274,29 @@ static ssize_t dload_mode_store(struct kobject *kobj,
 		pr_err("Supported dumps: 'full', 'mini', or 'both'\n");
 		return -EINVAL;
 	}
+
+#ifdef CONFIG_RAINBOW_AUTO_SET_DLOAD_MODE
+	#define QCOM_DOWNLOAD_INVALID 0xFF
+	if (fusion_type == FUSION_TYPE_SECOND) {
+		if (apdp_switch == 1)
+			mode = QCOM_DOWNLOAD_FULLDUMP;
+		else
+			mode = msm_minidump_enabled() ? QCOM_DOWNLOAD_MINIDUMP : QCOM_DOWNLOAD_INVALID;
+	} else {
+		mode = (fusion_type != FUSION_TYPE_FIRST && msm_minidump_enabled()) ?
+			QCOM_DOWNLOAD_BOTHDUMP: QCOM_DOWNLOAD_FULLDUMP;
+		trace_cmd_himntn_item_switch(HIMNTN_ID_FASTBOOT_SWITCH, &is_cmd_himntn);
+		if (!is_cmd_himntn)
+			mode = msm_minidump_enabled() ? QCOM_DOWNLOAD_MINIDUMP : QCOM_DOWNLOAD_INVALID;
+	}
+
+	if (mode == QCOM_DOWNLOAD_INVALID) {
+		pr_err("mode is invalid value\n");
+		return -EINVAL;
+	}
+
+	pr_err("dload mode set to 0x%x(full-0x10, mini-0x20, both-0x30)\n", mode);
+#endif
 
 	return set_dump_mode(mode) ? : count;
 }
@@ -270,7 +342,13 @@ static int qcom_dload_reboot(struct notifier_block *this, unsigned long event,
 
 	if (current_download_mode != QCOM_DOWNLOAD_NODUMP)
 		reboot_mode = REBOOT_WARM;
-
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+	if ((cmd != NULL && cmd[0] != '\0') && (!strcmp(cmd, "bootfail"))) {
+		rb_mreason_set(RB_M_BOOTFAIL);
+		rb_sreason_set("upper bootfail");
+		reboot_mode = REBOOT_WARM;
+	}
+#endif
 	return NOTIFY_OK;
 }
 
@@ -403,6 +481,8 @@ static void __exit qcom_dload_driver_exit(void)
 	return platform_driver_unregister(&qcom_dload_driver);
 }
 module_exit(qcom_dload_driver_exit);
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(cmd_himntn_item_switch);
 
 MODULE_DESCRIPTION("MSM Download Mode Driver");
 MODULE_LICENSE("GPL v2");

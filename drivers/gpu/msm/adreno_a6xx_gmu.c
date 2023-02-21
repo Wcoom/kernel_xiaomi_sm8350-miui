@@ -720,6 +720,7 @@ static void trigger_reset_recovery(struct adreno_device *adreno_dev,
 
 		adreno_hwsched_set_fault(adreno_dev);
 	} else {
+		report_gpu_dmd_inirq(ADRENO_GMU_FAULT_SKIP_SNAPSHOT, "trigger_reset_recovery2");
 		adreno_set_gpu_fault(adreno_dev,
 			ADRENO_GMU_FAULT_SKIP_SNAPSHOT);
 		adreno_dispatcher_schedule(device);
@@ -1821,6 +1822,7 @@ static int a6xx_gmu_dcvs_set(struct adreno_device *adreno_dev,
 		 * dispatcher based reset and recovery.
 		 */
 		if (test_bit(GMU_PRIV_GPU_STARTED, &gmu->flags)) {
+			report_gpu_dmd_inirq(ADRENO_HARD_FAULT, "a6xx_gmu_dcvs_set2");
 			adreno_set_gpu_fault(adreno_dev, ADRENO_GMU_FAULT |
 				ADRENO_GMU_FAULT_SKIP_SNAPSHOT);
 			adreno_dispatcher_schedule(device);
@@ -2222,9 +2224,6 @@ static int a6xx_gmu_first_boot(struct adreno_device *adreno_dev)
 	icc_set_bw(pwr->icc_path, 0, 0);
 
 	device->gmu_fault = false;
-
-	if (ADRENO_FEATURE(adreno_dev, ADRENO_BCL))
-		adreno_dev->bcl_enabled = true;
 
 	trace_kgsl_pwr_set_state(device, KGSL_STATE_AWARE);
 
@@ -2927,7 +2926,8 @@ static int a6xx_boot(struct adreno_device *adreno_dev)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	int ret;
 
-	WARN_ON(test_bit(GMU_PRIV_GPU_STARTED, &gmu->flags));
+	if (WARN_ON(test_bit(GMU_PRIV_GPU_STARTED, &gmu->flags)))
+		return 0;
 
 	trace_kgsl_pwr_request_state(device, KGSL_STATE_ACTIVE);
 
@@ -2960,8 +2960,12 @@ static int a6xx_first_boot(struct adreno_device *adreno_dev)
 	int ret;
 	unsigned long priv = 0;
 
-	if (test_bit(GMU_PRIV_FIRST_BOOT_DONE, &gmu->flags))
-		return a6xx_boot(adreno_dev);
+	if (test_bit(GMU_PRIV_FIRST_BOOT_DONE, &gmu->flags)) {
+		if (!test_bit(GMU_PRIV_GPU_STARTED, &gmu->flags))
+			return a6xx_boot(adreno_dev);
+
+		return 0;
+	}
 
 	place_marker("M - DRIVER ADRENO Init");
 
@@ -3013,6 +3017,17 @@ static int a6xx_first_boot(struct adreno_device *adreno_dev)
 
 	set_bit(GMU_PRIV_FIRST_BOOT_DONE, &gmu->flags);
 	set_bit(GMU_PRIV_GPU_STARTED, &gmu->flags);
+
+	/*
+	 * BCL needs respective Central Broadcast register to
+	 * be programed from TZ. This programing happens only
+	 * when zap shader firmware load is successful. Zap firmware
+	 * load can fail in boot up path hence enable BCL only after we
+	 * successfully complete first boot to ensure that Central
+	 * Broadcast register was programed before enabling BCL.
+	 */
+	if (ADRENO_FEATURE(adreno_dev, ADRENO_BCL))
+		adreno_dev->bcl_enabled = true;
 
 	device->pwrctrl.last_stat_updated = ktime_get();
 	device->state = KGSL_STATE_ACTIVE;

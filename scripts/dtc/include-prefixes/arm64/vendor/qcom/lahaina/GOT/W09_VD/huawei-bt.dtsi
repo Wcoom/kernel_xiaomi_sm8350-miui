@@ -1,0 +1,8 @@
+&huawei_bt_info{
+	compatible = "huawei,hw_bt_info";
+	status = "ok";
+	bt,fw_ver = "QCOM_WCN6856_HSP.2.1.0-00169";
+	bt,chiptype = "BT_FM_QUALCOMM_WCN6856";
+	gnss,chiptype = "single_1102a";
+	bt,nv_path = "goethe_w09_vd_hpnv21.bin";
+};

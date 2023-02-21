@@ -24,7 +24,9 @@
 #define NULL_ADDR		((block_t)0)	/* used as block_t addresses */
 #define NEW_ADDR		((block_t)-1)	/* used as block_t addresses */
 #define COMPRESS_ADDR		((block_t)-2)	/* used as compressed data flag */
-
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
+#define DEDUP_ADDR		((block_t)-3)	/* used as block_t addresses */
+#endif
 #define F2FS_BYTES_TO_BLK(bytes)	((bytes) >> F2FS_BLKSIZE_BITS)
 #define F2FS_BLK_TO_BYTES(blk)		((blk) << F2FS_BLKSIZE_BITS)
 
@@ -34,7 +36,9 @@
 #define F2FS_ROOT_INO(sbi)	((sbi)->root_ino_num)
 #define F2FS_NODE_INO(sbi)	((sbi)->node_ino_num)
 #define F2FS_META_INO(sbi)	((sbi)->meta_ino_num)
-
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
+#define F2FS_COMPRESS_INO(sbi)	(NM_I(sbi)->max_nid)
+#endif
 #define F2FS_MAX_QUOTAS		3
 
 #define F2FS_ENC_UTF8_12_1	1
@@ -122,11 +126,15 @@ struct f2fs_super_block {
 /*
  * For checkpoint
  */
-#define CP_RESIZEFS_FLAG		0x00004000
-#define CP_DISABLED_QUICK_FLAG		0x00002000
-#define CP_DISABLED_FLAG		0x00001000
-#define CP_QUOTA_NEED_FSCK_FLAG		0x00000800
-#define CP_LARGE_NAT_BITMAP_FLAG	0x00000400
+#define CP_DISABLED_QUICK_FLAG		0x00010000
+#define CP_RESIZEFS_FLAG		0x00008000
+#define CP_DISABLED_FLAG		0x00004000
+#define CP_LARGE_NAT_BITMAP_FLAG	0x00002000
+#define CP_QUOTA_NEED_FSCK_FLAG		0x00001000
+#ifdef CONFIG_F2FS_JOURNAL_APPEND
+#define CP_APPEND_NAT_FLAG	0x00000800
+#define CP_APPEND_SIT_FLAG	0x00000400
+#endif
 #define CP_NOCRC_RECOVERY_FLAG	0x00000200
 #define CP_TRIMMED_FLAG		0x00000100
 #define CP_NAT_BITS_FLAG	0x00000080
@@ -229,7 +237,9 @@ struct f2fs_extent {
 #define F2FS_INLINE_DOTS	0x10	/* file having implicit dot dentries */
 #define F2FS_EXTRA_ATTR		0x20	/* file having extra attribute */
 #define F2FS_PIN_FILE		0x40	/* file should not be gced */
-
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
+#define F2FS_COMPRESS_RELEASED	0x80	/* file released compressed blocks */
+#endif
 struct f2fs_inode {
 	__le16 i_mode;			/* file mode */
 	__u8 i_advise;			/* file hints */
@@ -273,7 +283,17 @@ struct f2fs_inode {
 			__le64 i_compr_blocks;	/* # of compressed blocks */
 			__u8 i_compress_algorithm;	/* compress algorithm */
 			__u8 i_log_cluster_size;	/* log of cluster size */
+#ifdef CONFIG_F2FS_FS_DISK_TURBO
+			__le16 i_compress_flag;		/* compress flag */
+							/* 0 bit: chksum flag
+						 	* [10,15] bits: compress level
+							*/
+			__le32 i_inner_ino;	/* for layered inode */
+			__le32 i_dedup_flags;	/* dedup file attributes */
+			__le32 i_dedup_rsvd;	/* reserved for dedup */
+#else
 			__le16 i_padding;		/* padding */
+#endif
 			__le32 i_extra_end[0];	/* for attribute size calculation */
 		} __packed;
 		__le32 i_addr[DEF_ADDRS_PER_INODE];	/* Pointers to data blocks */
@@ -422,6 +442,13 @@ struct summary_footer {
 				sizeof(struct sit_journal_entry))
 #define SIT_JOURNAL_RESERVED	((SUM_JOURNAL_SIZE - 2) %\
 				sizeof(struct sit_journal_entry))
+
+#ifdef CONFIG_F2FS_JOURNAL_APPEND
+#define NAT_APPEND_JOURNAL_ENTRIES	(F2FS_BLKSIZE /\
+					sizeof(struct nat_journal_entry))
+#define SIT_APPEND_JOURNAL_ENTRIES	(F2FS_BLKSIZE /\
+					sizeof(struct sit_journal_entry))
+#endif
 
 /* Reserved area should make size of f2fs_extra_info equals to
  * that of nat_journal and sit_journal.

@@ -1,0 +1,11 @@
+&huawei_batt_info {
+	shield_ct_sign = <1>;
+};
+
+&direct_charge_comp {
+	compensation_mode = <3>;
+};
+
+&direct_charger_sc {
+	delta_err = <200>;
+};

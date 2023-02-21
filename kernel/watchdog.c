@@ -27,8 +27,13 @@
 
 #include <asm/irq_regs.h>
 #include <linux/kvm_para.h>
+#include <platform/trace/events/zerohung.h>
 
 static DEFINE_MUTEX(watchdog_mutex);
+
+DEFINE_TRACE(dfx_watchdog_check_hung);
+DEFINE_TRACE(dfx_watchdog_lockup_init);
+DEFINE_TRACE(dfx_watchdog_lockup_init_work);
 
 #if defined(CONFIG_HARDLOCKUP_DETECTOR) || defined(CONFIG_HAVE_NMI_WATCHDOG)
 # define WATCHDOG_DEFAULT	(SOFT_WATCHDOG_ENABLED | NMI_WATCHDOG_ENABLED)
@@ -316,7 +321,7 @@ static int is_softlockup(unsigned long touch_ts)
 {
 	unsigned long now = get_timestamp();
 
-	if ((watchdog_enabled & SOFT_WATCHDOG_ENABLED) && watchdog_thresh){
+	if ((watchdog_enabled & SOFT_WATCHDOG_ENABLED) && watchdog_thresh) {
 		/* Warn about unreasonable delays. */
 		if (time_after(now, touch_ts + get_softlockup_thresh()))
 			return now - touch_ts;
@@ -433,7 +438,10 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 			    current) {
 				__this_cpu_write(soft_watchdog_warn, false);
 				__touch_watchdog();
+				trace_dfx_watchdog_lockup_init(0);
+				return HRTIMER_RESTART;
 			}
+			trace_dfx_watchdog_check_hung(0);
 			return HRTIMER_RESTART;
 		}
 
@@ -448,6 +456,7 @@ static enum hrtimer_restart watchdog_timer_fn(struct hrtimer *hrtimer)
 			}
 		}
 
+		trace_dfx_watchdog_check_hung(0);
 		pr_emerg("BUG: soft lockup - CPU#%d stuck for %us! [%s:%d]\n",
 			smp_processor_id(), duration,
 			current->comm, task_pid_nr(current));
@@ -517,6 +526,9 @@ void watchdog_enable(unsigned int cpu)
 	 */
 	mb();
 	*enabled = 1;
+
+	/* Init Hiview softlockup detect */
+	trace_dfx_watchdog_lockup_init_work(0);
 }
 
 void watchdog_disable(unsigned int cpu)
@@ -804,6 +816,10 @@ int proc_watchdog_cpumask(struct ctl_table *table, int write,
 	return err;
 }
 #endif /* CONFIG_SYSCTL */
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(dfx_watchdog_check_hung);
+EXPORT_TRACEPOINT_SYMBOL_GPL(dfx_watchdog_lockup_init);
+EXPORT_TRACEPOINT_SYMBOL_GPL(dfx_watchdog_lockup_init_work);
 
 void __init lockup_detector_init(void)
 {

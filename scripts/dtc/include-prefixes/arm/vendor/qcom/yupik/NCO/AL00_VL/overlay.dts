@@ -1,0 +1,44 @@
+/dts-v1/;
+/plugin/;
+
+#include "../common/common-pm7250b.dtsi"
+#include "huawei-nfc.dtsi"
+#include "huawei_camera.dtsi"
+#include "huawei_wifi.dtsi"
+#include "huawei_dp.dtsi"
+#include "huawei_charger.dtsi"
+
+/ {
+    /* bsp_replace_info @ model = "Huawei Technologies, Inc. %product_name%"; */
+    model = "Huawei Technologies, Inc. NCO-AL00";
+    compatible = "qcom,yupik-idp", "qcom,yupik", "qcom,idp";
+    /* bsp_replace_info @ qcom,board-id = <%boardid% 0>; */
+    qcom,board-id = <8609 0>;
+};
+
+&rootparam {
+    /* bsp_replace_info @ qcom,boardid = <%boardid_split%>; */
+    /* auto_key_info @ name: boardid type: uint32 default: 0 */
+    qcom,boardid = <8 6 0 9>;
+    /* bsp_replace_info @ qcom,board_name = "%board_name%"; */
+    qcom,board_name = "NCO_AL00_VL";
+    /* bsp_replace_info @ qcom,product_name = "%product_name%"; */
+    qcom,product_name = "NCO_BID1100";
+    /* bsp_replace_info @ hardware_version = "%hardware_version%"; */
+    hardware_version = "HL1NICM";
+    /* bsp_replace_info @ huawei,modem_id = <%modem_id% 0x0>; */
+    huawei,modem_id = <1100 0>;
+};
+
+&soc {
+    huawei_fingerprint {
+        compatible = "fpc,fingerprint";
+        avdd-supply = <&pm8350c_l9>;
+        fingerprint,avdd = "avdd";
+        fingerprint,avdd-min-uv = <3300000>;
+        fingerprint,avdd-max-uv = <3300000>;
+        fingerprint,avdd_en_gpio = <>;
+
+        status = "ok";
+    };
+};

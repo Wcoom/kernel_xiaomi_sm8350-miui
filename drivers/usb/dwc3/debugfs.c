@@ -922,7 +922,10 @@ static int dwc3_trb_ring_show(struct seq_file *s, void *unused)
 	struct dwc3		*dwc = dep->dwc;
 	unsigned long		flags;
 	int			i;
-
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	struct dwc3_trb *trb;
+	unsigned int type;
+#endif
 	spin_lock_irqsave(&dwc->lock, flags);
 	if (dep->number <= 1) {
 		seq_printf(s, "--\n");
@@ -932,9 +935,15 @@ static int dwc3_trb_ring_show(struct seq_file *s, void *unused)
 	seq_printf(s, "buffer_addr,size,type,ioc,isp_imi,csp,chn,lst,hwo\n");
 
 	for (i = 0; i < DWC3_TRB_NUM; i++) {
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+		trb = &dep->trb_pool[i];
+		if (!trb)
+			goto out;
+		type = DWC3_TRBCTL_TYPE(trb->ctrl);
+#else
 		struct dwc3_trb *trb = &dep->trb_pool[i];
 		unsigned int type = DWC3_TRBCTL_TYPE(trb->ctrl);
-
+#endif
 		seq_printf(s, "%08x%08x,%d,%s,%d,%d,%d,%d,%d,%d       %c%c\n",
 				trb->bph, trb->bpl, trb->size,
 				dwc3_trb_type_string(type),

@@ -89,6 +89,16 @@ extern int sysctl_compaction_handler(struct ctl_table *table, int write,
 			void __user *buffer, size_t *length, loff_t *ppos);
 extern int sysctl_extfrag_threshold;
 extern int sysctl_compact_unevictable_allowed;
+#ifdef CONFIG_COMPACTION_PROACTIVE
+#ifdef CONFIG_HW_PROACTIVE_COMPACT
+extern int sysctl_compact_loop_allowed;
+extern unsigned int sysctl_compact_proactive_order;
+#endif
+extern unsigned int sysctl_compaction_proactiveness;
+extern int compaction_proactiveness_sysctl_handler(struct ctl_table *table,
+		int write, void *buffer, size_t *length, loff_t *ppos);
+extern unsigned int extfrag_for_order(struct zone *zone, unsigned int order);
+#endif
 
 extern int fragmentation_index(struct zone *zone, unsigned int order);
 extern enum compact_result try_to_compact_pages(gfp_t gfp_mask,

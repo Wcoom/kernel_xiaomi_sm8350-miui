@@ -58,6 +58,10 @@
 #include "quirks.h"
 #include "sd_ops.h"
 
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+#include "mmc_health_diag.h"
+#endif
+
 MODULE_ALIAS("mmc:block");
 #ifdef MODULE_PARAM_PREFIX
 #undef MODULE_PARAM_PREFIX
@@ -1711,31 +1715,31 @@ static void mmc_blk_read_single(struct mmc_queue *mq, struct request *req)
 	struct mmc_card *card = mq->card;
 	struct mmc_host *host = card->host;
 	blk_status_t error = BLK_STS_OK;
-	int retries = 0;
 
 	do {
 		u32 status;
 		int err;
+		int retries = 0;
 
-		mmc_blk_rw_rq_prep(mqrq, card, 1, mq);
+		while (retries++ <= MMC_READ_SINGLE_RETRIES) {
+			mmc_blk_rw_rq_prep(mqrq, card, 1, mq);
 
-		mmc_wait_for_req(host, mrq);
+			mmc_wait_for_req(host, mrq);
 
-		err = mmc_send_status(card, &status);
-		if (err)
-			goto error_exit;
-
-		if (!mmc_host_is_spi(host) &&
-		    !mmc_blk_in_tran_state(status)) {
-			err = mmc_blk_fix_state(card, req);
+			err = mmc_send_status(card, &status);
 			if (err)
 				goto error_exit;
+
+			if (!mmc_host_is_spi(host) &&
+			    !mmc_blk_in_tran_state(status)) {
+				err = mmc_blk_fix_state(card, req);
+				if (err)
+					goto error_exit;
+			}
+
+			if (!mrq->cmd->error)
+				break;
 		}
-
-		if (mrq->cmd->error && retries++ < MMC_READ_SINGLE_RETRIES)
-			continue;
-
-		retries = 0;
 
 		if (mrq->cmd->error ||
 		    mrq->data->error ||
@@ -2245,6 +2249,17 @@ static int mmc_blk_mq_issue_rw_rq(struct mmc_queue *mq,
 	struct request *prev_req = NULL;
 	int err = 0;
 
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+	unsigned long long time1 = 0;
+	unsigned int rq_byte = 0;
+
+	struct mmc_blk_data *md = mq->blkdata;
+	if (mmc_card_removable_mmc(mq->card) || mmc_card_sd(mq->card)) {
+		mmc_trigger_ro_check(req, md->disk, md->read_only);
+		time1 = sched_clock();
+		rq_byte = mmc_calculate_ioworkload_and_rwspeed(time1, req, md->disk, mq->card);
+	}
+#endif
 	mmc_blk_rw_rq_prep(mqrq, mq->card, 0, mq);
 
 	mqrq->brq.mrq.done = mmc_blk_mq_req_done;
@@ -2252,6 +2267,10 @@ static int mmc_blk_mq_issue_rw_rq(struct mmc_queue *mq,
 	mmc_pre_req(host, &mqrq->brq.mrq);
 
 	err = mmc_blk_rw_wait(mq, &prev_req);
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+	if (mmc_card_removable_mmc(mq->card) || mmc_card_sd(mq->card))
+		mmc_diag_sd_health_status(md->disk, mmc_get_rw_status(err));
+#endif
 	if (err)
 		goto out_post_req;
 
@@ -2273,6 +2292,10 @@ out_post_req:
 	if (err)
 		mmc_post_req(host, &mqrq->brq.mrq, err);
 
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+	if (mmc_card_removable_mmc(mq->card) || mmc_card_sd(mq->card))
+		mmc_calculate_rw_size(time1, rq_byte, req);
+#endif
 	return err;
 }
 
@@ -3007,6 +3030,11 @@ static int mmc_blk_probe(struct mmc_card *card)
 
 	dev_set_drvdata(&card->dev, md);
 
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+	if (mmc_card_removable_mmc(card) || mmc_card_sd(card))
+		mmc_clear_report_info();
+#endif
+
 	if (mmc_add_disk(md))
 		goto out;
 
@@ -3029,6 +3057,10 @@ static int mmc_blk_probe(struct mmc_card *card)
 		pm_runtime_set_active(&card->dev);
 		pm_runtime_enable(&card->dev);
 	}
+#ifdef CONFIG_HW_SD_HEALTH_DETECT
+	if (mmc_card_removable_mmc(card) || mmc_card_sd(card))
+		mmc_report_info_set();
+#endif
 
 	return 0;
 

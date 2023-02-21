@@ -1,0 +1,124 @@
+#include "camera-sensor-v4.dtsi"
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		gpios-shared-pinctrl = <474 468 466 340 403>; /* 7315gpio offset is 336 */
+		shared-pctrl-gpio-names = "mcam_avdd", "mcam_gpio132_iovdd", "mcam_dvdd", "mcam_afvdd", "cam_sensor_mclk3";
+		pinctrl-names = "mcam_avdd_active", "mcam_avdd_suspend",
+			"mcam_gpio132_iovdd_active", "mcam_gpio132_iovdd_suspend",
+			"mcam_dvdd_active", "mcam_dvdd_suspend",
+			"mcam_afvdd_active", "mcam_afvdd_suspend",
+			"cam_sensor_mclk3_active", "cam_sensor_mclk3_suspend";
+		pinctrl-0 = <&mcam_avdd_active>;
+		pinctrl-1 = <&mcam_avdd_suspend>;
+		pinctrl-2 = <&mcam_gpio132_iovdd_active>;
+		pinctrl-3 = <&mcam_gpio132_iovdd_suspend>;
+		pinctrl-4 = <&mcam_dvdd_active>;
+		pinctrl-5 = <&mcam_dvdd_suspend>;
+		pinctrl-6 = <&mcam_afvdd_active>;
+		pinctrl-7 = <&mcam_afvdd_suspend>;
+		pinctrl-8 = <&cam_sensor_mclk3_active>;
+		pinctrl-9 = <&cam_sensor_mclk3_suspend>;
+		status = "ok";
+	};
+};
+
+&tlmm {
+	mcam_gpio132_iovdd_active: mcam_gpio132_iovdd_active {
+		/* mcam_iovdd for REAR MAIN, REAR WIDE */
+		mux {
+			pins = "gpio132";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio132";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+			output-high;
+		};
+	};
+
+	mcam_gpio132_iovdd_suspend: mcam_gpio132_iovdd_suspend {
+		/* mcam_iovdd for REAR MAIN, REAR WIDE */
+		mux {
+			pins = "gpio132";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio132";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+/* cci0: i2c0 i2c1 */
+&cam_cci0 {
+	/* front tel eeprom */
+	qcom,eeprom7 {
+		gpios = <&tlmm 65 0>, /* mclk1 gpio 65 */
+			<&tlmm 132 0>;  /*mcam_iovdd gpio 132 */
+	};
+
+	/* front tel senosr */
+	qcom,cam-sensor7 {
+		gpios = <&tlmm 65 0>, /* mclk1 gpio 65 */
+			<&tlmm 21 0>, /* reset1 gpio 21 */
+			<&tlmm 138 0>, /* mcam_avdd gpio 138 */
+			<&tlmm 132 0>, /* mcam_iodd gpio 132 */
+			<&tlmm 2 0>, /* mcam_dvdd gpio 2 */
+			/* mcam_dvdd en pm7325b gpio 5, ov08c10 is low, hi847 is high*/
+			<&pm7325b_gpios 5 0>,
+			<&tlmm 4 0>, /* afvdd 7315 gpio 4 */
+			<&pm7325b_gpios 7 0>; /* mcam_avdd pm7325b gpio 7 */
+	};
+};
+
+/* cci1: i2c2、i2c3 */
+&cam_cci1 {
+	/* rear main eeprrom */
+	qcom,eeprom4 {
+		gpios = <&tlmm 66 0>, /* mclk2 gpio 66 */
+			<&tlmm 132 0>;  /* mcam_iovdd gpio 132 */
+	};
+
+	/* rear main senosr */
+	qcom,cam-sensor4 {
+		gpios = <&tlmm 66 0>, /* mclk2 gpio 66 */
+			<&tlmm 77 0>, /* reset2 gpio 77 */
+			<&tlmm 138 0>, /*rear_mcam_avdd 2.85v gpio 138 */
+			<&tlmm 68 0>, /*rear_mcam_avdd 1.8v gpio 68 */
+			<&tlmm 132 0>,  /*mcam_iovdd gpio 132 */
+			<&tlmm 130 0>, /*mcam_dvdd gpio 130 */
+			<&tlmm 4 0>; /* afvdd 7315 gpio 4 */
+	};
+
+	/* rear wide eeprom */
+	qcom,eeprom6 {
+		gpios = <&tlmm 67 0>, /* mclk3 gpio 67 */
+			<&tlmm 132 0>;  /*mcam_iovdd gpio 132 */
+	};
+
+	/* rear wide senosr */
+	qcom,cam-sensor6 {
+		gpios = <&tlmm 67 0>, /* mclk3 gpio 67 */
+			<&tlmm 78 0>, /* reset3 gpio 78 */
+			<&tlmm 138 0>, /* mcam_avdd gpio 138 */
+			<&tlmm 132 0>, /* mcam_iovdd gpio 132 */
+			<&tlmm 4 0>,  /* afvdd 7315 gpio 4 */
+			<&pm7325b_gpios 8 0>; /* mcam_avdd pm7325b gpio 8 */
+	};
+
+	/* rear depth senosr */
+	qcom,cam-sensor8 {
+		gpios = <&tlmm 67 0>, /* mclk3 gpio 67 */
+			<&tlmm 16 0>, /* reset4 gpio 16 */
+			<&tlmm 96 0>, /* pwdn4 gpio 96 */
+			<&tlmm 138 0>, /* mcam_avdd gpio 138 */
+			<&tlmm 132 0>; /* mcam_iovdd gpio 132 */
+	};
+};

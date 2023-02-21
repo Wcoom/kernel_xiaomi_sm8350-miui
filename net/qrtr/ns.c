@@ -236,16 +236,16 @@ static int announce_servers(struct sockaddr_qrtr *sq)
 			pr_info("Avoiding duplicate announce for NODE ID %u\n", node->id);
 			continue;
 		}
-		xa_for_each(&node->servers, index, srv) {
-			ret = service_announce_new(sq, srv);
-			if (ret < 0) {
-				if (ret == -ENODEV)
-					continue;
+	xa_for_each(&node->servers, index, srv) {
+		ret = service_announce_new(sq, srv);
+		if (ret < 0) {
+			if (ret == -ENODEV)
+				continue;
 
-				pr_err("failed to announce new service %d\n", ret);
-				return ret;
-			}
+			pr_err("failed to announce new service %d\n", ret);
+			return ret;
 		}
+	}
 	}
 	return 0;
 }

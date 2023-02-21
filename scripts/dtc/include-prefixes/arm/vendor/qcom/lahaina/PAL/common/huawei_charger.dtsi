@@ -1,0 +1,875 @@
+&tlmm {
+	bq25970_main_irq_pins_default: bq25970_main_irq_pins_default {
+		mux {
+			pins = "gpio115";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio115";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	bq25970_aux_irq_pins_default: bq25970_aux_irq_pins_default {
+		mux {
+			pins = "gpio7";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio7";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	sm5450_irq_pins_default: sm5450_irq_pins_default {
+		mux {
+			pins = "gpio75";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio75";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+
+	battct_swi_pins_default: battct_swi_pins_default {
+		mux {
+			pins = "gpio8";
+			drive-strength = <6>;
+			function = "gpio";
+		};
+		config {
+			pins = "gpio8";
+			input-enable;
+		};
+	};
+
+	battct_swi_pins_aux: battct_swi_pins_aux {
+		mux {
+			pins = "gpio155";
+			drive-strength = <6>;
+			function = "gpio";
+		};
+		config {
+			pins = "gpio155";
+			input-enable;
+		};
+	};
+
+	battct_id_pins_default: battct_id_pins_default {
+		mux {
+			pins = "gpio97";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio97";
+			bias-disable;
+			output-high;
+		};
+	};
+};
+
+&soc_decimal {
+	ui_offset = <0>;
+	status = "ok";
+};
+
+&vbus_monitor {
+	status = "ok";
+	absent_monitor_enabled = <1>;
+};
+
+&boost_5v {
+	boost_5v_use_internal_pmic = <1>;
+	status = "ok";
+};
+
+&power_thermalzone {
+	status = "ok";
+	sensors{
+		sensor0 {
+			sensor_name = "usb_port";
+			ops_name = "uscp";
+			adc_channel = <0>;
+			ntc_index = <5>;
+		};
+	};
+};
+
+&qcom_usb_temp {
+	status = "ok";
+};
+
+&usb_short_circuit_protect {
+	gpio_usb_short_circuit_protect = <&tlmm 73 0>; /* GPIO_073 */
+	status = "ok";
+};
+
+&dev_detect {
+	gauge_ic = <1>;
+};
+
+&buck_charge {
+	force_term_support = <1>;
+	gpios = <&tlmm 196 0 &tlmm 197 0>;
+	gpio_types = "equal_curr_load_mos2", "equal_curr_load_mos3";
+	gpio_en_status = <1 1>;
+	status = "ok";
+};
+
+&ffc_control {
+	status = "ok";
+	buck_term_para =
+		"-32767", "10", "0", "0", "250",
+		"10", "20", "15", "660", "250",
+		"20", "35", "15", "1045", "250",
+		"35", "45", "15", "1155", "250",
+		"45", "32767", "0", "0", "250";
+	buck_term_para1 =
+		"-32767", "10", "0", "0", "250",
+		"10", "20", "30", "630", "250",
+		"20", "35", "30", "1500", "250",
+		"35", "45", "30", "1850", "250",
+		"45", "32767", "0", "0", "250";
+	ffc_bat_para =
+		"CAE", "1", "buck_term_para",
+		"CAE", "0", "buck_term_para1";
+};
+
+&direct_charge_ps {
+	boost_5v_support_scp_power = <0>;
+	bst_ctrl_use_common_gpio = <0>;
+	is_need_bst_ctrl = <0>;
+	status = "ok";
+};
+
+&direct_charge_ic {
+	/* The IC_PARA table is used to find the relationship between chip and path */
+	/* the chip's current passing capacity */
+	/* and the sampling points of battery voltage and current */
+	/* ic_index path_index max_ibat ibat_sample_point vbat_sample_point */
+	/* ic_index  path_index  max_ibat  ibat_sample_point  vbat_sample_point */
+	ic_para1 =
+		"2", "0", "5000", "0", "0",
+		"1", "-1", "0", "1", "1";
+	ic_para2 =
+		"0", "0", "8000", "0", "0",
+		"1", "1", "8000", "1", "1";
+	mode_para =
+		"lvc_mode", "ic_para1",
+		"sc_mode", "ic_para2";
+	use_coul_ibat = <1>;
+	status = "ok";
+};
+
+&direct_charger {
+	use_5A = <1>;
+	need_wired_sw_off = <0>;
+	min_dc_bat_vol = <3300>;
+	volt_para =
+		"4080", "5000", "4650",
+		"4230", "4650", "2800",
+		"4400", "2800", "1200";
+	compensate_r = <20>;
+	cc_cable_detect_enable = <1>;
+	full_path_res_max = <220>;
+	scp_work_on_charger = <1>;
+	standard_cable_full_path_res_max = <260>;
+	first_cc_stage_timer_in_min = <5>;
+	stage_need_to_jump = "1";
+	low_temp_hysteresis = <5>;
+	temp_para =
+		"-32767", "10", "0",
+		"10", "45", "5000",
+		"45", "32767", "0";
+	rt_test_para =
+		"1800", "105"; /* rt_curr_th rt_test_time */
+	status = "ok";
+};
+
+&direct_charger_sc {
+	use_8A = <1>;
+	need_wired_sw_off = <0>;
+	dc_volt_ratio = <2>;
+	init_delt_vset = <450>;
+	max_adaptor_vset = <11000>;
+	init_adapter_vset = <8800>;
+	vol_err_th = <500>;
+	adaptor_leakage_current_th = <600>;
+	vstep = <20>;
+	min_dc_bat_vol = <3300>;
+	max_dc_bat_vol = <4380>;
+	max_current_for_none_standard_cable = <6000>;
+	adaptor_antifake_check_enable = <1>;
+	adaptor_antifake_key_index = <2>;
+	support_multi_ic = <1>;
+	multi_ic_ibat_th = <4000>;
+	second_resist_check_en = <1>;
+	ui_max_pwr = <40000>;
+	product_max_pwr = <66000>;
+	volt_para =
+		"4150", "9000", "6750",
+		"4250", "6750", "5400",
+		"4300", "5400", "4500",
+		"4450", "4500", "3150";
+	volt_para1 =
+		"4250", "12000", "9000",
+		"4350", "9000", "6750",
+		"4450", "6750", "5400",
+		"4470", "5400", "2000";
+	time_para =
+		"1800", "0",
+		"1550", "8100",
+		"600", "8200",
+		"150", "10000",
+		"0", "12000";
+	bat_para =
+		"default", "10", "20", "volt_para",
+		"default", "20", "45", "volt_para1",
+		"CAE", "10", "20", "volt_para",
+		"CAE", "20", "45", "volt_para1";
+	vstep_para =
+		"2000", "80";
+	compensate_r = <20>;
+	cc_cable_detect_enable = <1>;
+	full_path_res_max = <450>;
+	scp_work_on_charger = <1>;
+	standard_cable_full_path_res_max = <450>;
+	first_cc_stage_timer_in_min = <10>;
+	stage_need_to_jump = "-1";
+	low_temp_hysteresis = <5>;
+	current_ratio =
+		"3", "5", "23", "2", "-1",
+		"3", "6", "20", "1", "8000",
+		"0", "6", "20", "0", "0";
+	vbat_error =
+		"3", "120", "2", "-1",
+		"3", "80", "1", "0";
+	temp_para =
+		"-32767", "10", "0",
+		"10", "46", "12800",
+		"46", "32767", "0";
+	resist_para =
+		"0", "260", "6000",
+		"260", "450", "4000";
+	std_resist_para =
+		"0", "300", "0",
+		"300", "450", "6000";
+	second_resist_para =
+		"0", "180", "0",
+		"180", "450", "8000";
+	ctc_second_resist_para =
+		"0", "250", "0",
+		"250", "450", "8000";
+	rt_test_para =
+		/* first:sc second:mainsc third:auxsc */
+		"3000", "105",
+		"2700", "105",
+		"2700", "105";
+	status = "ok";
+};
+
+&huawei_battery_temp {
+	status = "ok";
+};
+
+&multi_btb_temp {
+	status = "ok";
+	ntc_compensation_is = <1>;
+	max_tbat_gap = <2000>;
+	mixed_temp_en = <1>;
+	comp_para =
+		"11000", "11000",
+		"10000", "10000",
+		"9000", "8000",
+		"8000", "6000",
+		"7000", "5000",
+		"6000", "4000",
+		"5000", "3000",
+		"3000", "2000",
+		"2000", "1000";
+	comp_para1 =
+		"11000", "5000",
+		"10000", "5000",
+		"9000", "4000",
+		"8000", "3000",
+		"7000", "2000",
+		"6000", "2000",
+		"5000", "1000",
+		"3000", "1000",
+		"2000", "0";
+	sensor-names =
+		"battery_gauge", "comp_para",
+		"battery_gauge_aux", "comp_para1";
+};
+
+&huawei_battery {
+	compatible = "huawei,battery";
+	status = "ok";
+	huawei,usb-psy-name = "usb";
+	huawei,jeita-hardware-charge-disable;
+	huawei,ibus-detect-disable;
+};
+
+&huawei_charger {
+	compatible = "huawei,charger";
+	status = "ok";
+};
+
+&battery_model {
+	bat_id_table =
+		"BCYCAE_4500_4450_v0", "330000", "460000", "CA",
+		"BYTCAE_4500_4450_v0", "330000", "460000", "YA",
+		"BCYCAE_4780_4450_v1", "330000", "460000", "CAS",
+		"BYTCAE_4780_4450_v1", "330000", "460000", "YAS";
+	si_item_code =
+		"0234",
+		"0241",
+		"0242",
+		"1147",
+		"3073",
+		"3074",
+		"3665",
+		"4035";
+	bat_num = <2>;
+	bat_cathode_ext = <1>;
+	id_adc_channel = <0>; /* useless but necessary for Qcom, set 0 as default */
+	status = "ok";
+};
+
+&huawei_power_proxy {
+	status = "ok";
+};
+
+&huawei_power_supply {
+	 status = "ok";
+};
+
+&huawei_mixed_battery {
+	psy-names = "huawei_batt";
+	status = "disabled";
+};
+
+&battery_core {
+	coul_type = <2>;
+	status = "ok";
+};
+
+&battery_1s2p {
+	cap_ratio_0 = <500>;
+	cap_ratio_1 = <500>;
+	status = "ok";
+};
+
+&battery_1s2p_balance {
+	status = "ok";
+	unbalance_th = <200 5000>; /* low:0.200, higth:5.000, typical = 2250 / 2250(1) */
+	battery0 {
+		weight = <2250>; /* 2250mAH */
+		cccv_0 = <4450 0>;
+		cccv_0_10 = <4450 675>; /* 0.3C */
+		cccv_10_20 = <4150 4500
+			4250 3375
+			4300 2700
+			4450 2250
+			4480 1575>; /* 2C 1.5C 1.2C 1C 0.7C */
+		cccv_20_45 = <4150 6997 /* 20_35 35_45 are same */
+			4250 6502
+			4350 4500
+			4450 3375
+			4480 2700>; /* 3.11C 2.89C 2C 1.5C 1.2C */
+		cccv_45_60 = <4100 787>; /* 0.35C */
+		cccv_100 = <4500 0>;
+		temp_tab = "0", "cccv_0",
+			"10", "cccv_0_10",
+			"20", "cccv_10_20",
+			"45", "cccv_20_45",
+			"60", "cccv_45_60",
+			"100", "cccv_100";
+	};
+
+	battery1 {
+		weight = <2250>; /* 2250mAH */
+		cccv_0 = <4450 0>;
+		cccv_0_10 = <4450 675>; /* 0.3C */
+		cccv_10_20 = <4150 4500
+			4250 3375
+			4300 2700
+			4450 2250
+			4480 1575>; /* 2C 1.5C 1.2C 1C 0.7C */
+		cccv_20_45 = <4150 6997 /* 20_35 35_45 are same */
+			4250 6502
+			4350 4500
+			4450 3375
+			4480 2700>; /* 3.11C 2.89C 2C 1.5C 1.2C */
+		cccv_45_60 = <4100 787>; /* 0.35C */
+		cccv_100 = <4500 0>;
+		temp_tab = "0", "cccv_0",
+			"10", "cccv_0_10",
+			"20", "cccv_10_20",
+			"45", "cccv_20_45",
+			"60", "cccv_45_60",
+			"100", "cccv_100";
+	};
+};
+
+&battery_ui_capacity {
+	force_zero_en = <1>;
+	status = "ok";
+};
+
+&battery_fault {
+	vol_cutoff_normal = <2900>;
+	vol_cutoff_normal_si = <2800>;
+	vol_cutoff_sleep = <3100>;
+	vol_cutoff_sleep_si = <3000>;
+	vol_cutoff_low_temp = <2800>;
+	vol_cutoff_low_temp_si = <2700>;
+	status = "ok";
+};
+
+&qupv3_se0_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "ok";
+	rt9426_battery@55{
+		reg = <0x55>;
+		compatible = "richtek,rt9426";
+		rt,bat_name = "battery_gauge_aux";
+		disable_under_vol_irq = <1>;
+		need_reset_version = <9>;
+		rt_config_ver = <16>;
+		lowtemp_en = <1>;
+		ic_role = <1>;
+		ntc_compensation_is = <1>;
+		ntc_temp_compensation_para =
+			"11000", "110",
+			"10000", "100",
+			"9000", "80",
+			"8000", "60",
+			"7000", "50",
+			"6000", "40",
+			"5000", "30",
+			"3000", "20",
+			"2000", "10";
+		status = "ok";
+		battery0{
+			batt_name = "BYTCAE_4500_4450_v0";
+			#include "../../../huawei_charger/rt9426_BCYCAE_4500mAh_4V45_PALAU_BT198_aux.dtsi"
+		};
+		battery1{
+			batt_name = "BCYCAE_4500_4450_v0";
+			#include "../../../huawei_charger/rt9426_BCYCAE_4500mAh_4V45_PALAU_BT198_aux.dtsi"
+		};
+		battery2{
+			batt_name = "BYTCAE_4780_4450_v1";
+			#include "../../../huawei_charger/rt9426_BYTCAE_2390mAh_4V45_PALAU_BT248_aux.dtsi"
+		};
+		battery3{
+			batt_name = "BCYCAE_4780_4450_v1";
+			#include "../../../huawei_charger/rt9426_BYTCAE_2390mAh_4V45_PALAU_BT248_aux.dtsi"
+		};
+	};
+
+	cw2217@64 {
+		compatible = "cellwise,cw2217";
+		reg = <0x64>;
+		cw,bat_name = "battery_gauge_aux";
+		ic_role = <1>;
+		status = "ok";
+		battery0{
+			batt_name = "BYTCAE_4500_4450_v0";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2250mAh_4V45_PALAU_BT198_aux.dtsi"
+		};
+		battery1{
+			batt_name = "BCYCAE_4500_4450_v0";
+			#include "../../../huawei_charger/cw2217_2mohm_BCYCAE_2250mAh_4V45_PALAU_BT198_aux.dtsi"
+		};
+		battery2{
+			batt_name = "BYTCAE_4780_4450_v1";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2390mAh_4V45_PALAU_BT248_aux.dtsi"
+		};
+		battery3{
+			batt_name = "BCYCAE_4780_4450_v1";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2390mAh_4V45_PALAU_BT248_aux.dtsi"
+		};
+	};
+
+	bq25970@65 {
+		compatible = "bq25970";
+		gpio_int = <&tlmm 7 0>;
+		switching_frequency = <675>;
+		reg = <0x65>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bq25970_aux_irq_pins_default>;
+		ic_role = <1>;
+		sense_r_actual = <20>;
+		resume_need_wait_i2c = <1>;
+		status = "ok";
+	};
+
+	tps63810@75 {
+		compatible = "huawei,buckboost_tps63810";
+		reg = <0x75>;
+		gpio_enable = <&tlmm 154 0>;
+		vsel_state = <1>;
+		status = "ok";
+	};
+};
+
+&qupv3_se13_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "ok";
+	rt9426_battery@55{
+		reg = <0x55>;
+		compatible = "richtek,rt9426";
+		rt,bat_name = "battery_gauge";
+		disable_under_vol_irq = <1>;
+		need_reset_version = <9>;
+		rt_config_ver = <16>;
+		lowtemp_en = <1>;
+		ic_role = <0>;
+		ntc_compensation_is = <1>;
+		ntc_temp_compensation_para =
+			"11000", "110",
+			"10000", "100",
+			"9000", "80",
+			"8000", "60",
+			"7000", "50",
+			"6000", "40",
+			"5000", "30",
+			"3000", "20",
+			"2000", "10";
+		status = "ok";
+		battery0{
+			batt_name = "BYTCAE_4500_4450_v0";
+			#include "../../../huawei_charger/rt9426_BCYCAE_4500mAh_4V45_PALAU_BT198.dtsi"
+		};
+		battery1{
+			batt_name = "BCYCAE_4500_4450_v0";
+			#include "../../../huawei_charger/rt9426_BCYCAE_4500mAh_4V45_PALAU_BT198.dtsi"
+		};
+		battery2{
+			batt_name = "BYTCAE_4780_4450_v1";
+			#include "../../../huawei_charger/rt9426_BYTCAE_2390mAh_4V45_PALAU_BT248.dtsi"
+		};
+		battery3{
+			batt_name = "BCYCAE_4780_4450_v1";
+			#include "../../../huawei_charger/rt9426_BYTCAE_2390mAh_4V45_PALAU_BT248.dtsi"
+		};
+	};
+
+	cw2217@64 {
+		compatible = "cellwise,cw2217";
+		reg = <0x64>;
+		cw,bat_name = "battery_gauge";
+		ic_role = <0>;
+		status = "ok";
+		battery0{
+			batt_name = "BYTCAE_4500_4450_v0";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2250mAh_4V45_PALAU_BT198.dtsi"
+		};
+		battery1{
+			batt_name = "BCYCAE_4500_4450_v0";
+			#include "../../../huawei_charger/cw2217_2mohm_BCYCAE_2250mAh_4V45_PALAU_BT198.dtsi"
+		};
+		battery2{
+			batt_name = "BYTCAE_4780_4450_v1";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2390mAh_4V45_PALAU_BT248.dtsi"
+		};
+		battery3{
+			batt_name = "BCYCAE_4780_4450_v1";
+			#include "../../../huawei_charger/cw2217_2mohm_BYTCAE_2390mAh_4V45_PALAU_BT248.dtsi"
+		};
+	};
+
+	bq25970@65 {
+		compatible = "bq25970";
+		gpio_int = <&tlmm 115 0>;
+		switching_frequency = <675>;
+		reg = <0x65>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&bq25970_main_irq_pins_default>;
+		ic_role = <0>;
+		sense_r_actual = <20>;
+		resume_need_wait_i2c = <1>;
+		status = "ok";
+	};
+
+	sm5450@6F{
+		compatible = "sm5450";
+		reg = <0x6F>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sm5450_irq_pins_default>;
+		intr_gpio_num = <75>; /* direct defined GPIO num */
+		intr_gpio = <&tlmm 75 0>;
+		fcp_support = <1>;
+		scp_support = <1>;
+		sense_r_actual = <20>;
+		ic_role = <2>;
+		status = "ok";
+	};
+
+	protocol_ic_stm32g031_i2c@56 {
+		compatible = "stm32g031";
+		fcp_support = <1>;
+		scp_support = <1>;
+		ufcs_support = <0>;
+		int_gpio_type = <1>; /* 0:int gpio for wakeup; 1:int gpio for interrupt */
+		wait_time = <0>;
+		gpio_enable = <&tlmm 67 0>;
+		gpio_reset = <&tlmm 121 0>;
+		gpio_int = <&tlmm 127 0>;
+		reg = <0x56>;
+		status = "disabled";
+	};
+};
+
+&qupv3_se15_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "ok";
+	tps63810@75 {
+		compatible = "huawei,bbst_tps63810_aux";
+		reg = <0x75>;
+		gpio_enable = <&tlmm 154 0>;
+		vsel_state = <1>;
+		status = "ok";
+	};
+};
+
+&buck_boost {
+	status = "ok";
+};
+
+&huawei_ptst {
+	status = "ok";
+};
+
+&huawei_is_sm5450 {
+	is_sm5450 = <1>;
+	status = "ok";
+};
+
+&pm8350b_gpios {
+	key_water_ck {
+		key_water_ck_default: key_water_ck_default {
+			pins = "gpio5";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+
+	cam0_water_ck {
+		cam0_water_ck_default: cam0_water_ck_default {
+			pins = "gpio7";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+
+	cam1_water_ck {
+		cam1_water_ck_default: cam1_water_ck_default {
+			pins = "gpio8";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+};
+
+&pm8350c_gpios {
+	link0_water_ck {
+		link0_water_ck_default: link0_water_ck_default {
+			pins = "gpio2";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+
+	link1_water_ck {
+		link1_water_ck_default: link1_water_ck_default {
+			pins = "gpio3";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+
+	bj_water_ck {
+		bj_water_ck_default: bj_water_ck_default {
+			pins = "gpio4";
+			function = "normal";
+			bias-disable;
+			power-source = <0>;
+			input-enable;
+		};
+	};
+
+	link2_water_ck {
+		link2_water_ck_default: link2_water_ck_default {
+			pins = "gpio5";
+			function = "normal";
+			bias-disable;
+			power-source = <1>;
+			input-enable;
+		};
+	};
+
+	link3_water_ck {
+		link3_water_ck_default: link3_water_ck_default {
+			pins = "gpio6";
+			function = "normal";
+			bias-disable;
+			power-source = <1>;
+			input-enable;
+		};
+	};
+
+	sim_water_ck {
+		sim_water_ck_default: sim_water_ck_default {
+			pins = "gpio7";
+			function = "normal";
+			bias-disable;
+			power-source = <1>;
+			input-enable;
+		};
+	};
+
+	usb_water_ck {
+		usb_water_ck_default: usb_water_ck_default {
+			pins = "gpio9";
+			function = "normal";
+			bias-disable;
+			power-source = <1>;
+			input-enable;
+		};
+	};
+};
+
+&water_check {
+	interrupt-parent = <&spmi_bus>;
+	pinctrl_enable = <1>;
+	gpio_key = <&pm8350b_gpios 5 GPIO_ACTIVE_LOW>;
+	gpio_cam0 = <&pm8350b_gpios 7 GPIO_ACTIVE_LOW>;
+	gpio_cam1 = <&pm8350b_gpios 8 GPIO_ACTIVE_LOW>;
+	gpio_link0 = <&pm8350c_gpios 2 GPIO_ACTIVE_LOW>;
+	gpio_link1 = <&pm8350c_gpios 3 GPIO_ACTIVE_LOW>;
+	gpio_bj = <&pm8350c_gpios 4 GPIO_ACTIVE_LOW>;
+	gpio_link2 = <&pm8350c_gpios 5 GPIO_ACTIVE_LOW>;
+	gpio_link3 = <&pm8350c_gpios 6 GPIO_ACTIVE_LOW>;
+	gpio_sim = <&pm8350c_gpios 7 GPIO_ACTIVE_LOW>;
+	gpio_usb = <&pm8350c_gpios 9 GPIO_ACTIVE_LOW>;
+	pinctrl-names = "key_water_ck_default",
+			"cam0_water_ck_default",
+			"cam1_water_ck_default",
+			"link0_water_ck_default",
+			"link1_water_ck_default",
+			"bj_water_ck_default",
+			"link2_water_ck_default",
+			"link3_water_ck_default",
+			"sim_water_ck_default",
+			"usb_water_ck_default";
+	pinctrl-0 = <&key_water_ck_default>;
+	pinctrl-1 = <&cam0_water_ck_default>;
+	pinctrl-2 = <&cam1_water_ck_default>;
+	pinctrl-3 = <&link0_water_ck_default>;
+	pinctrl-4 = <&link1_water_ck_default>;
+	pinctrl-5 = <&bj_water_ck_default>;
+	pinctrl-6 = <&link2_water_ck_default>;
+	pinctrl-7 = <&link3_water_ck_default>;
+	pinctrl-8 = <&sim_water_ck_default>;
+	pinctrl-9 = <&usb_water_ck_default>;
+	/* check_type, gpio_name, irq_no, multiple_handle, dmd_offset, prompt, action */
+	water_check_para =
+		"1", "key",   "-1", "1", "3", "0", "0",
+		"1", "cam0",  "-1", "1", "3", "0", "0",
+		"1", "cam1",  "-1", "1", "3", "0", "0",
+		"1", "link0", "-1", "1", "3", "0", "0",
+		"1", "link1", "-1", "1", "3", "0", "0",
+		"1", "bj",    "-1", "1", "3", "0", "0",
+		"1", "link2", "-1", "1", "3", "0", "0",
+		"1", "link3", "-1", "1", "3", "0", "0",
+		"1", "sim",   "-1", "1", "2", "0", "0",
+		"1", "usb",   "-1", "1", "0", "0", "0",
+		"2", "null",  "-1", "0", "3", "0", "0",
+		"3", "null",  "-1", "0", "3", "0", "0",
+		"4", "null",  "-1", "0", "3", "0", "0";
+	status = "ok";
+};
+
+&sle95250 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&battct_swi_pins_default>;
+	onewire-gpio = <&tlmm 8 0>;
+	product_id0 = <1>;
+	product_id2 = <3>;
+	gpio_sn_mode_val = <0>;
+	dip_check = <0>;
+	gpio_swi = <8>;
+	gpio_id_mode = <97>;
+	gpio_swi_drv = <2>;
+	tau = /bits/ 8 <0xa>;
+	tau_fastboot = <7>;
+	status = "ok";
+};
+
+&sle95250_1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&battct_swi_pins_aux>;
+	onewire-gpio = <&tlmm 155 0>;
+	product_id0 = <1>;
+	product_id2 = <3>;
+	gpio_sn_mode_val = <0>;
+	dip_check = <0>;
+	gpio_swi = <155>;
+	gpio_id_mode = <97>;
+	gpio_swi_drv = <2>;
+	tau = /bits/ 8 <0xa>;
+	tau_fastboot = <7>;
+	status = "ok";
+	ic_index = <1>;
+};
+
+&huawei_batt_info {
+	status = "ok";
+	shield_ct_sign = <3>;
+	sn-check-type = <2>;
+	battery_checker@0 {
+		matchable = <&sle95250>;
+		status = "ok";
+	};
+	battery_checker@1 {
+		matchable = <&sle95250_1>;
+		status = "ok";
+	};
+};
+
+&huawei_batt_soh {
+	basp = <1>;
+	status = "ok";
+};
+
+&huawei_batt_identify {
+	pinctrl-names = "default";
+	pinctrl-0 = <&battct_id_pins_default>;
+	gpios = <&tlmm 97 0>;
+	id_voltage_gpiov = <0 1>;
+	id_sn_gpiov = <0 0>;
+	status = "ok";
+};

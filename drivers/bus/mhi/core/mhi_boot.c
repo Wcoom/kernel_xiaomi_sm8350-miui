@@ -17,6 +17,10 @@
 #include <linux/mhi.h>
 #include "mhi_internal.h"
 
+#ifdef CONFIG_HUAWEI_DSM
+#include <hw_wlan/hw_wlan.h>
+#endif
+
 static void mhi_process_sfr(struct mhi_controller *mhi_cntrl,
 	struct file_info *info)
 {
@@ -59,6 +63,9 @@ static void mhi_process_sfr(struct mhi_controller *mhi_cntrl,
 
 	/* force sfr string to log in kernel msg */
 	MHI_ERR("%s\n", sfr_buf);
+#ifdef CONFIG_HUAWEI_DSM
+	hw_wlan_dsm_client_notify(DSM_WIFI_FIRMWARE_RESET_ERROR, sfr_buf);
+#endif
 err:
 	kfree(sfr_buf);
 }
@@ -312,8 +319,8 @@ static int __mhi_download_rddm_in_panic(struct mhi_controller *mhi_cntrl)
 	ret = mhi_rddm_download_status(mhi_cntrl);
 	if (!ret) {
 		MHI_CNTRL_LOG("RDDM dumps collected successfully");
-		return 0;
-	}
+			return 0;
+		}
 
 err_no_rddm:
 	MHI_CNTRL_ERR("Did not complete RDDM transfer\n");

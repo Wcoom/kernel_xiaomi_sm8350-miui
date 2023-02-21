@@ -34,6 +34,10 @@
 #include <linux/android_kabi.h>
 #include <linux/android_vendor.h>
 
+#ifdef CONFIG_HW_RTG
+#include <linux/sched/hw_rtg/rtg.h>
+#endif
+
 /* task_struct member predeclarations (sorted alphabetically): */
 struct audit_context;
 struct backing_dev_info;
@@ -51,6 +55,9 @@ struct perf_event_context;
 struct pid_namespace;
 struct pipe_inode_info;
 struct rcu_node;
+#ifdef CONFIG_HW_RECLAIM_ACCT
+struct reclaim_acct;
+#endif
 struct reclaim_state;
 struct robust_list_head;
 struct root_domain;
@@ -222,6 +229,65 @@ enum task_boost_type {
 /* Task command name length: */
 #define TASK_COMM_LEN			16
 
+#ifdef CONFIG_HW_VIP_THREAD
+enum DYNAMIC_VIP_TYPE
+{
+	DYNAMIC_VIP_BINDER = 0,
+#ifdef CONFIG_FUSE_FS
+	DYNAMIC_VIP_FUSE = DYNAMIC_VIP_BINDER,
+#endif
+	DYNAMIC_VIP_RWSEM,
+	DYNAMIC_VIP_MUTEX,
+	DYNAMIC_VIP_SEM,
+	DYNAMIC_VIP_FUTEX,
+	DYNAMIC_VIP_MAX,
+};
+
+#define VIP_MSG_LEN 64
+#define VIP_DEPTH_MAX 2
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+enum DYNAMIC_QOS_TYPE {
+	DYNAMIC_QOS_BINDER = 0,
+#ifdef CONFIG_FUSE_FS
+	DYNAMIC_QOS_FUSE = DYNAMIC_QOS_BINDER,
+#endif
+	DYNAMIC_QOS_RWSEM,
+	DYNAMIC_QOS_MUTEX,
+	DYNAMIC_QOS_FUTEX,
+#ifdef CONFIG_HW_ASYNC_BINDER_TRANS
+	DYNAMIC_QOS_ASYNC_BINDER,
+#endif
+	DYNAMIC_QOS_TYPE_MAX,
+};
+enum DYNAMIC_QOS_VALUE {
+	VALUE_QOS_INVALID = -1,
+	VALUE_QOS_LOW = 0,
+	VALUE_QOS_NORMAL,
+	VALUE_QOS_HIGH,
+	VALUE_QOS_CRITICAL,
+	VALUE_QOS_MAX,
+};
+enum DYNAMIC_QOS_OPERATION {
+	OPERATION_QOS_SET_THREAD = 0,
+	OPERATION_QOS_SET_PROCESS,
+	OPERATION_QOS_ENQUEUE,
+	OPERATION_QOS_DEQUEUE,
+	OPERATION_QOS_MAX,
+};
+#if defined (CONFIG_HUAWEI_SCHED_VIP) || defined (CONFIG_SCHED_HISI_TASK_MIN_UTIL)
+struct restore_sched_param {
+	bool trans_flag;
+	unsigned int value;
+};
+#endif
+#ifdef CONFIG_HW_GRADED_SCHED
+#define HCFS_GRADED_OFFSET 10
+#define DEFAULT_ORIGINAL_NICE (-100)
+#endif
+#endif
+
 enum task_event {
 	PUT_PREV_TASK   = 0,
 	PICK_NEXT_TASK  = 1,
@@ -275,6 +341,7 @@ extern int __must_check io_schedule_prepare(void);
 extern void io_schedule_finish(int token);
 extern long io_schedule_timeout(long timeout);
 extern void io_schedule(void);
+extern void show_stack(struct task_struct *task, unsigned long *sp);
 
 /**
  * struct prev_cputime - snapshot of system and user cputime
@@ -558,12 +625,25 @@ sched_update_cpu_freq_min_max(const cpumask_t *cpus, u32 fmin, u32 fmax);
 extern void free_task_load_ptrs(struct task_struct *p);
 extern int set_task_boost(int boost, u64 period);
 extern void walt_update_cluster_topology(void);
+extern void show_stack(struct task_struct *task, unsigned long *sp);
 
 #define RAVG_HIST_SIZE_MAX  5
 #define NUM_BUSY_BUCKETS 10
 
 #define WALT_LOW_LATENCY_PROCFS	BIT(0)
 #define WALT_LOW_LATENCY_BINDER	BIT(1)
+
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+struct ravg {
+	/* ravg represents frequency scaled cpu-demand of tasks */
+	u32				predl_sum;
+	u32				predl;
+	u32				predl_sum_history[RAVG_HIST_SIZE_MAX];
+	u8				predl_busy_buckets[NUM_BUSY_BUCKETS];
+	u32				predl_prev_window_cpu[NR_CPUS];
+	u32				predl_curr_window_cpu[NR_CPUS];
+};
+#endif
 
 struct walt_task_struct {
 	/*
@@ -600,6 +680,9 @@ struct walt_task_struct {
 	 * 'demand_scaled' represents task's demand scaled to 1024
 	 */
 	u64				mark_start;
+#ifdef CONFIG_HW_TASK_RAVG_SUM
+	u64				ravg_sum;
+#endif
 	u32				sum, demand;
 	u32				coloc_demand;
 	u32				sum_history[RAVG_HIST_SIZE_MAX];
@@ -622,11 +705,26 @@ struct walt_task_struct {
 	u32				unfilter;
 	u64				last_wake_ts;
 	u64				last_enqueued_ts;
+#ifdef CONFIG_QCOM_WALT_RTG
 	struct walt_related_thread_group __rcu	*grp;
 	struct list_head		grp_list;
+#endif
 	u64				cpu_cycles;
 	cpumask_t			cpus_requested;
 	bool				iowaited;
+#ifdef CONFIG_HW_RTG
+	u64				curr_window_load;
+	u64				prev_window_load;
+	u64				curr_window_exec;
+	u64				prev_window_exec;
+#endif
+#ifdef CONFIG_HW_TOP_TASK
+	u32				load_sum;
+	u32				load_avg;
+	u32				load_sum_history[RAVG_HIST_SIZE_MAX];
+	u32				prev_load;
+	u32				curr_load;
+#endif
 };
 
 #else
@@ -795,6 +893,20 @@ struct wake_q_node {
 	struct wake_q_node *next;
 };
 
+#ifdef CONFIG_HUAWEI_SWAP_ZDATA
+struct reclaim_result {
+	unsigned nr_reclaimed;
+	unsigned nr_writedblock;
+	s64 elapsed_centisecs64;
+};
+#endif
+
+#ifdef CONFIG_BLK_CGROUP_IOSMART
+struct blk_throtl_wb_stat {
+	u32 bios;
+};
+#endif
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -816,8 +928,45 @@ struct task_struct {
 	refcount_t			usage;
 	/* Per task flags (PF_*), defined further below: */
 	unsigned int			flags;
+#ifdef CONFIG_HW_CGROUP_WORKINGSET
+	unsigned int			ext_flags;
+#endif
 	unsigned int			ptrace;
 
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	unsigned int vip_prio;
+	struct list_head vip_prio_entry;
+	u64 vip_last_queued;
+#endif
+
+#ifdef CONFIG_HW_VIP_THREAD
+	int static_vip;
+	int vip_depth;
+	atomic64_t dynamic_vip;
+	struct list_head vip_entry;
+	u64 enqueue_time;
+	u64 dynamic_vip_start;
+#endif
+#if defined(CONFIG_HW_FUTEX_PI) && defined(CONFIG_HUAWEI_SCHED_VIP)
+	unsigned int normal_vip_prio;
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	struct set_qos *proc_qos; // qos of process
+	struct set_qos thread_qos; // qos of thread
+	struct trans_qos_allow *trans_allowed;
+	atomic_t trans_flags;
+	struct transact_qos trans_qos[DYNAMIC_QOS_TYPE_MAX];
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+	struct restore_sched_param vip_params;
+#endif
+#ifdef CONFIG_SCHED_HISI_UTIL_CLAMP
+	struct restore_sched_param min_util_params;
+#endif
+#endif
+
+#ifdef CONFIG_HW_GRADED_SCHED
+	int original_nice;
+#endif
 #ifdef CONFIG_SMP
 	struct llist_node		wake_entry;
 	int				on_cpu;
@@ -852,6 +1001,19 @@ struct task_struct {
 
 #ifdef CONFIG_SCHED_WALT
 	struct walt_task_struct		wts;
+#ifdef CONFIG_HW_SCHED_PRED_LOAD_WINDOW_SIZE_TUNNABLE
+	struct ravg			ravg;
+#endif
+#ifdef CONFIG_HW_RTG
+	int rtg_depth;
+	struct related_thread_group	*grp;
+	struct list_head		grp_list;
+#endif
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_STAT_YIELD
+	u32				cumulative_yield_time;
+	u64				last_yield_ts;
 #endif
 
 #ifdef CONFIG_CGROUP_SCHED
@@ -1024,6 +1186,9 @@ struct task_struct {
 	u64				*time_in_state;
 	unsigned int			max_state;
 #endif
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+	unsigned long long cpu_power;
+#endif
 	struct prev_cputime		prev_cputime;
 #ifdef CONFIG_VIRT_CPU_ACCOUNTING_GEN
 	struct vtime			vtime;
@@ -1186,6 +1351,9 @@ struct task_struct {
 	/* Stack plugging: */
 	struct blk_plug			*plug;
 #endif
+#ifdef CONFIG_BLK_CGROUP_IOSMART
+	struct blk_throtl_wb_stat wb_stat;
+#endif
 
 	/* VM state: */
 	struct reclaim_state		*reclaim_state;
@@ -1332,6 +1500,10 @@ struct task_struct {
 	struct task_delay_info		*delays;
 #endif
 
+#ifdef CONFIG_HW_RECLAIM_ACCT
+	struct reclaim_acct		*reclaim_acct;
+#endif
+
 #ifdef CONFIG_FAULT_INJECTION
 	int				make_it_fail;
 	unsigned int			fail_nth;
@@ -1448,6 +1620,9 @@ struct task_struct {
 	/* A live task holds one reference: */
 	refcount_t			stack_refcount;
 #endif
+#ifdef CONFIG_HUAWEI_SWAP_ZDATA
+	struct reclaim_result *proc_reclaimed_result;
+#endif
 #ifdef CONFIG_LIVEPATCH
 	int patch_state;
 #endif
@@ -1459,6 +1634,13 @@ struct task_struct {
 #ifdef CONFIG_GCC_PLUGIN_STACKLEAK
 	unsigned long			lowest_stack;
 	unsigned long			prev_lowest_stack;
+#endif
+
+/*
+ * android_vendor_data1[0] is used as struct mm_struct *remote_mm
+ */
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM
+#define REMOTE_MM 0
 #endif
 
 	ANDROID_VENDOR_DATA_ARRAY(1, 3);
@@ -1488,6 +1670,23 @@ struct task_struct {
 	 * Do not put anything below here!
 	 */
 };
+
+#ifdef CONFIG_DFX_HUNGTASK_MMAP_SEM
+static inline void set_remote_mm(const struct mm_struct *mm)
+{
+	current->android_vendor_data1[REMOTE_MM] = (u64)mm;
+}
+
+static inline void clear_remote_mm(void)
+{
+	current->android_vendor_data1[REMOTE_MM] = 0;
+}
+
+static inline struct mm_struct *get_remote_mm(const struct task_struct *task)
+{
+	return (struct mm_struct *)task->android_vendor_data1[REMOTE_MM];
+}
+#endif
 
 static inline struct pid *task_pid(struct task_struct *task)
 {
@@ -1673,8 +1872,14 @@ extern struct pid *cad_pid;
 #define PF_NO_SETAFFINITY	0x04000000	/* Userland is not allowed to meddle with cpus_mask */
 #define PF_MCE_EARLY		0x08000000      /* Early kill for mce process policy */
 #define PF_MEMALLOC_NOCMA	0x10000000	/* All allocation request will have _GFP_MOVABLE cleared */
+#define PF_MUTEX_GC		0x20000000	/* whether this task hold the GC mutex */
 #define PF_FREEZER_SKIP		0x40000000	/* Freezer should not count it as freezable */
 #define PF_SUSPEND_TASK		0x80000000      /* This thread called freeze_processes() and should not be frozen */
+
+#ifdef CONFIG_HW_CGROUP_WORKINGSET
+#define PF_EXT_WSCG_MONITOR	0x00000001	/* I am in a workingset cgroup of monitor */
+#define PF_EXT_WSCG_PREREAD	0x00000002	/* I am a thread preread workingset by myself */
+#endif
 
 /*
  * Only the _current_ task can read/write to tsk->flags, but other
@@ -1724,6 +1929,10 @@ static inline bool is_percpu_thread(void)
 #define PFA_SPEC_IB_FORCE_DISABLE	6	/* Indirect branch speculation permanently restricted */
 #define PFA_SPEC_SSB_NOEXEC		7	/* Speculative Store Bypass clear on execve() */
 
+#ifdef CONFIG_CGROUP_IOLIMIT
+#define PFA_IN_PAGEFAULT		27
+#endif
+#define PFA_IN_WB_THRD			28
 #define TASK_PFA_TEST(name, func)					\
 	static inline bool task_##func(struct task_struct *p)		\
 	{ return test_bit(PFA_##name, &p->atomic_flags); }
@@ -1735,6 +1944,10 @@ static inline bool is_percpu_thread(void)
 #define TASK_PFA_CLEAR(name, func)					\
 	static inline void task_clear_##func(struct task_struct *p)	\
 	{ clear_bit(PFA_##name, &p->atomic_flags); }
+
+TASK_PFA_TEST(IN_WB_THRD, in_wb_thrd)
+TASK_PFA_SET(IN_WB_THRD, in_wb_thrd)
+TASK_PFA_CLEAR(IN_WB_THRD, in_wb_thrd)
 
 TASK_PFA_TEST(NO_NEW_PRIVS, no_new_privs)
 TASK_PFA_SET(NO_NEW_PRIVS, no_new_privs)
@@ -1764,6 +1977,12 @@ TASK_PFA_CLEAR(SPEC_IB_DISABLE, spec_ib_disable)
 
 TASK_PFA_TEST(SPEC_IB_FORCE_DISABLE, spec_ib_force_disable)
 TASK_PFA_SET(SPEC_IB_FORCE_DISABLE, spec_ib_force_disable)
+
+#ifdef CONFIG_CGROUP_IOLIMIT
+TASK_PFA_TEST(IN_PAGEFAULT, in_pagefault)
+TASK_PFA_SET(IN_PAGEFAULT, in_pagefault)
+TASK_PFA_CLEAR(IN_PAGEFAULT, in_pagefault)
+#endif
 
 static inline void
 current_restore_flags(unsigned long orig_flags, unsigned long flags)
@@ -2066,6 +2285,8 @@ extern long sched_getaffinity(pid_t pid, struct cpumask *mask);
 #define TASK_SIZE_OF(tsk)	TASK_SIZE
 #endif
 
+extern void sched_account_ui_thread_io_block_counts(int msecs);
+
 #ifdef CONFIG_RSEQ
 
 /*
@@ -2237,6 +2458,10 @@ static inline int sched_set_wake_up_idle(struct task_struct *p,
 }
 
 static inline void set_wake_up_idle(bool enabled) {}
+#endif
+
+#ifdef CONFIG_HUAWEI_SCHED_VIP
+int set_vip_prio(struct task_struct *p, unsigned int prio);
 #endif
 
 #endif

@@ -52,6 +52,7 @@
 #include <linux/usb/usbnet.h>
 #include <linux/usb/cdc.h>
 #include <linux/usb/cdc_ncm.h>
+#include <securec.h>
 
 #if IS_ENABLED(CONFIG_USB_NET_CDC_MBIM)
 static bool prefer_mbim = true;
@@ -90,6 +91,11 @@ static const struct cdc_ncm_stats cdc_ncm_gstrings_stats[] = {
 };
 
 #define CDC_NCM_LOW_MEM_MAX_CNT 10
+#ifdef CONFIG_USB_EXTRA_MODEM
+#define CDC_NCM_DEV_VAL 0xFF
+#define CDC_NCM_DEV_OPEN_FAIL 0xFE
+#define CDC_NCM_DEV_STOP_FAIL 0xFD
+#endif
 
 static int cdc_ncm_get_sset_count(struct net_device __always_unused *netdev, int sset)
 {
@@ -328,6 +334,46 @@ static ssize_t ndp_to_end_store(struct device *d,  struct device_attribute *attr
 }
 static DEVICE_ATTR_RW(ndp_to_end);
 
+#ifdef CONFIG_USB_EXTRA_MODEM
+static ssize_t dev_switch_show(struct device *d, struct device_attribute *attr, char *buf)
+{
+    struct usbnet *dev = netdev_priv(to_net_dev(d));
+    struct cdc_ncm_ctx *ctx = (struct cdc_ncm_ctx *)dev->data[0];
+
+    dev_err(&dev->intf->dev, "to show dev_val\n");
+
+    return snprintf_s(buf, PAGE_SIZE, PAGE_SIZE - 1, "%d\n", ctx->dev_val);
+}
+
+static ssize_t dev_switch_store(struct device *d,  struct device_attribute *attr, const char *buf, size_t len)
+{
+    struct usbnet *dev = netdev_priv(to_net_dev(d));
+    struct cdc_ncm_ctx *ctx = (struct cdc_ncm_ctx *)dev->data[0];
+    unsigned long val;
+
+    if (kstrtoul(buf, 0, &val))
+        return -EINVAL;
+
+    dev_err(&dev->intf->dev, "read buf %d\n", val);
+
+    /* val not change, return directly */
+    if((val != 0 && val != 1) || val == ctx->dev_val) {
+        dev_err(&dev->intf->dev, "read buf %d, last val is %d\n", val, ctx->dev_val);
+        return len;
+    }
+
+    ctx->dev_val = val;
+
+    if(!schedule_work(&ctx->devent))
+        dev_err(&dev->intf->dev, "devent %d may have been dropped\n", ctx->dev_val);
+    else
+        dev_err(&dev->intf->dev, "devent %d scheduled\n", ctx->dev_val);
+
+    return len;
+}
+static DEVICE_ATTR_RW(dev_switch);
+#endif
+
 #define NCM_PARM_ATTR(name, format, tocpu)				\
 static ssize_t cdc_ncm_show_##name(struct device *d, struct device_attribute *attr, char *buf) \
 { \
@@ -351,6 +397,9 @@ NCM_PARM_ATTR(wNtbOutMaxDatagrams, "%u", le16_to_cpu);
 static struct attribute *cdc_ncm_sysfs_attrs[] = {
 	&dev_attr_min_tx_pkt.attr,
 	&dev_attr_ndp_to_end.attr,
+#ifdef CONFIG_USB_EXTRA_MODEM
+	&dev_attr_dev_switch.attr,
+#endif
 	&dev_attr_rx_max.attr,
 	&dev_attr_tx_max.attr,
 	&dev_attr_tx_timer_usecs.attr,
@@ -765,6 +814,39 @@ static const struct net_device_ops cdc_ncm_netdev_ops = {
 	.ndo_validate_addr   = eth_validate_addr,
 };
 
+#ifdef CONFIG_USB_EXTRA_MODEM
+static void ncm_switch_devent(struct work_struct *work)
+{
+    struct cdc_ncm_ctx *ctx = (struct cdc_ncm_ctx *)container_of(work, struct cdc_ncm_ctx, devent);
+    struct usbnet *dev = ctx->usbnet_dev;
+    struct net_device *ndev = dev->net;
+    int status = 0;
+
+    dev_err(&dev->intf->dev, "devent scheduled, ndev->name %s, state %d\n", ndev->name, ndev->state);
+    switch (ctx->dev_val) {
+        case 0:
+            status = ndev->netdev_ops->ndo_stop(ndev);
+            if (status != 0)
+            {
+                ctx->dev_val = CDC_NCM_DEV_STOP_FAIL;
+                dev_err(&dev->intf->dev, "ctx->dev_val %d stop fail\n", ctx->dev_val);
+            }
+            break;
+        case 1:
+            status = ndev->netdev_ops->ndo_open(ndev);
+            if (status != 0)
+            {
+                ctx->dev_val = CDC_NCM_DEV_OPEN_FAIL;
+                dev_err(&dev->intf->dev, "ctx->dev_val %d open fail\n", ctx->dev_val);
+            }
+            break;
+        default:
+            dev_err(&dev->intf->dev, "ctx->dev_val %d not meet\n", ctx->dev_val);
+            break;
+    }
+}
+#endif
+
 int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_altsetting, int drvflags)
 {
 	struct cdc_ncm_ctx *ctx;
@@ -786,6 +868,11 @@ int cdc_ncm_bind_common(struct usbnet *dev, struct usb_interface *intf, u8 data_
 	tasklet_init(&ctx->bh, cdc_ncm_txpath_bh, (unsigned long)dev);
 	atomic_set(&ctx->stop, 0);
 	spin_lock_init(&ctx->mtx);
+#ifdef CONFIG_USB_EXTRA_MODEM
+	INIT_WORK(&ctx->devent, ncm_switch_devent);
+	ctx->usbnet_dev = dev;
+	ctx->dev_val = CDC_NCM_DEV_VAL;
+#endif
 
 	/* store ctx pointer in device data field */
 	dev->data[0] = (unsigned long)ctx;
@@ -968,11 +1055,15 @@ void cdc_ncm_unbind(struct usbnet *dev, struct usb_interface *intf)
 	if (ctx == NULL)
 		return;		/* no setup */
 
+	dump_stack();
 	atomic_set(&ctx->stop, 1);
 
 	hrtimer_cancel(&ctx->tx_timer);
 
 	tasklet_kill(&ctx->bh);
+#ifdef CONFIG_USB_EXTRA_MODEM
+	cancel_work_sync(&ctx->devent);
+#endif
 
 	/* handle devices with combined control and data interface */
 	if (ctx->control == ctx->data)

@@ -1,0 +1,4 @@
+&qcom_reserved_pins {
+        qtee_reserved_io = <8 9 118>;
+        compatible = "qcom,reserved_io";
+};

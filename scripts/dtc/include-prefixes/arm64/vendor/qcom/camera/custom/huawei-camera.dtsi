@@ -1,0 +1,13 @@
+&soc {
+    camera_flashlight_test: camera_flashlight_test {
+        torch-light-name = "torch-light-back", "torch-light-front";
+        /* Valid values are:  i2c, pmic, gpio ..., the order must same as torch-light-name */
+        torch-light-ctrl-type = "pmic", "pmic";
+    };
+
+    huawei,camera-class {
+        compatible = "huawei,camera-class";
+        camera-flashlight-test-src = <&camera_flashlight_test>;
+        status = "ok";
+    };
+};

@@ -36,7 +36,9 @@
 #include <trace/events/trace_msm_ssr_event.h>
 
 #include "peripheral-loader.h"
-
+#ifdef CONFIG_MODEM_RESET
+#include "modem_reset/hw_modem_reset.h"
+#endif
 #define DISABLE_SSR 0x9889deed
 /* If set to 0x9889deed, call to subsystem_restart_dev() returns immediately */
 static uint disable_restart_work;
@@ -632,6 +634,24 @@ static void notify_each_subsys_device(struct subsys_device **list,
 	}
 }
 
+int wlan_ssr_trigger_panic(struct subsys_device *subs_dev)
+{
+	if (subs_dev == NULL) {
+		pr_info("subsytem  is null \n");
+		return -1;
+	}
+	notify_each_subsys_device(&subs_dev, 1, SUBSYS_SOC_RESET, NULL);
+	/*
+	 * Temporary workaround until ramdump userspace application calls
+	 * sync() and fclose() on attempting the dump.
+	 */
+	msleep(50000);
+	panic("subsys-restart: 50s Resetting the SoC - %s crashed",
+							subs_dev->desc->name);
+	return 0;
+}
+EXPORT_SYMBOL(wlan_ssr_trigger_panic);
+
 static int subsystem_shutdown(struct subsys_device *dev, void *data)
 {
 	const char *name = dev->desc->name;
@@ -658,8 +678,13 @@ static int subsystem_shutdown(struct subsys_device *dev, void *data)
 static int subsystem_ramdump(struct subsys_device *dev, void *data)
 {
 	const char *name = dev->desc->name;
+	pr_info("enter [%s] ramdump \n", name);
 
+#ifdef CONFIG_MODEM_RESET
+	if (dev->desc->ramdump && enable_ramdumps)
+#else
 	if (dev->desc->ramdump)
+#endif
 		if (dev->desc->ramdump(is_ramdump_enabled(dev), dev->desc) < 0)
 			pr_warn("%s[%s:%d]: Ramdump failed.\n",
 				name, current->comm, current->pid);
@@ -931,7 +956,9 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	unsigned int count;
 	unsigned long flags;
 	int ret;
-
+#ifdef CONFIG_MODEM_RESET
+	int enable_ramdumps_old = 0;
+#endif
 	/*
 	 * It's OK to not take the registration lock at this point.
 	 * This is because the subsystem list inside the relevant
@@ -975,8 +1002,17 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	 */
 	mutex_lock(&soc_order_reg_lock);
 
-	pr_debug("[%s:%d]: Starting restart sequence for %s\n",
+	pr_info("[%s:%d]: Starting restart sequence for %s\n",
 			current->comm, current->pid, desc->name);
+
+#ifdef CONFIG_MODEM_RESET
+	/* disable subsystem ramdump if subsystem restart is requested */
+	if (get_subsystem_restart_requested()) {
+		enable_ramdumps_old = enable_ramdumps;
+		enable_ramdumps = 0;
+	}
+#endif
+
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	ret = for_each_subsys_device(list, count, NULL, subsystem_shutdown);
 	if (ret)
@@ -993,13 +1029,24 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 	/* Collect ram dumps for all subsystems in order here */
 	for_each_subsys_device(list, count, NULL, subsystem_ramdump);
 
+	pr_info("finish subsystem_ramdump \n");
+
 	for_each_subsys_device(list, count, NULL, subsystem_free_memory);
 
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_POWERUP, NULL);
 	ret = for_each_subsys_device(list, count, NULL, subsystem_powerup);
+	pr_info("finish subsystem_powerup \n");
 	if (ret)
 		goto err;
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_POWERUP, NULL);
+#ifdef CONFIG_MODEM_RESET
+	/* restore subsystem ramdump switch */
+	if (get_subsystem_restart_requested()) {
+		enable_ramdumps = enable_ramdumps_old;
+		set_subsystem_restart_requested(0);
+	}
+
+#endif
 
 	pr_info("[%s:%d]: Restart sequence for %s completed.\n",
 			current->comm, current->pid, desc->name);
@@ -1041,6 +1088,9 @@ static void __subsystem_restart_dev(struct subsys_device *dev)
 			__pm_stay_awake(dev->ssr_wlock);
 			queue_work(ssr_wq, &dev->work);
 		} else {
+#ifdef CONFIG_MODEM_RESET
+			if (!get_subsystem_restart_requested())
+#endif
 			panic("Subsystem %s crashed during SSR!", name);
 		}
 	} else
@@ -1053,13 +1103,13 @@ static void device_restart_work_hdlr(struct work_struct *work)
 {
 	struct subsys_device *dev = container_of(work, struct subsys_device,
 							device_restart_work);
-
 	notify_each_subsys_device(&dev, 1, SUBSYS_SOC_RESET, NULL);
 	/*
 	 * Temporary workaround until ramdump userspace application calls
 	 * sync() and fclose() on attempting the dump.
 	 */
 	msleep(100);
+
 	panic("subsys-restart: Resetting the SoC - %s crashed.",
 							dev->desc->name);
 }
@@ -1106,6 +1156,13 @@ int subsystem_restart_dev(struct subsys_device *dev)
 		__subsystem_restart_dev(dev);
 		break;
 	case RESET_SOC:
+#ifdef CONFIG_MODEM_RESET
+		if (get_subsystem_restart_requested() == 1) {
+			__subsystem_restart_dev(dev);
+			pr_info("subsys-restart: huawei restart request,so couldn't reboot!!");
+			break;
+		}
+#endif
 		__pm_stay_awake(dev->ssr_wlock);
 		schedule_work(&dev->device_restart_work);
 		return 0;

@@ -20,6 +20,8 @@
 #include <linux/pm_runtime.h>
 #include <linux/security.h>
 #include <linux/sort.h>
+#include <linux/msm_kgsl.h>
+#include <linux/gpu_hook.h>
 #include <soc/qcom/boot_stats.h>
 
 #include "kgsl_compat.h"
@@ -81,6 +83,8 @@ static inline struct kgsl_pagetable *_get_memdesc_pagetable(
 static void kgsl_mem_entry_detach_process(struct kgsl_mem_entry *entry);
 
 static const struct file_operations kgsl_fops;
+
+static atomic_long_t gpu_total_used = ATOMIC_INIT(0);
 
 /*
  * The memfree list contains the last N blocks of memory that have been freed.
@@ -422,6 +426,9 @@ kgsl_mem_entry_destroy(struct kref *kref)
 
 	/* pull out the memtype before the flags get cleared */
 	memtype = kgsl_memdesc_usermem_type(&entry->memdesc);
+
+	if (memtype == KGSL_MEM_ENTRY_KERNEL)
+		atomic_long_sub(entry->memdesc.size, &gpu_total_used);
 
 	kgsl_process_sub_stats(entry->priv, memtype, entry->memdesc.size);
 
@@ -1124,6 +1131,40 @@ int kgsl_gpu_frame_count(pid_t pid, u64 *frame_count)
 	return 0;
 }
 EXPORT_SYMBOL(kgsl_gpu_frame_count);
+
+#ifdef CONFIG_GPU_AI_FENCE_INFO
+int perf_ctrl_get_gpu_fence(void __user *uarg)
+{
+	struct kbase_fence_info gpu_fence;
+	int ret;
+
+	if (uarg == NULL)
+		return -EINVAL;
+
+	if (copy_from_user(&gpu_fence, uarg, sizeof(struct kbase_fence_info))) {
+		pr_err("%s: copy_from_user fail\n", __func__);
+		return -EFAULT;
+	}
+
+	ret = kgsl_gpu_frame_count(gpu_fence.game_pid, &gpu_fence.signaled_seqno);
+	if (ret != 0) {
+		pr_err("%s: kgsl_get_gpu_frame_count fail, ret=%d\n", __func__, ret);
+		return ret;
+	}
+
+	if (copy_to_user(uarg, &gpu_fence, sizeof(struct kbase_fence_info))) {
+		pr_err("%s: copy_to_user fail\n", __func__);
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+int perf_ctrl_get_gpu_buffer_size(void __user *uarg)
+{
+	return 0;
+}
+#endif
 
 static int kgsl_close_device(struct kgsl_device *device)
 {
@@ -2025,20 +2066,14 @@ long kgsl_ioctl_gpu_aux_command(struct kgsl_device_private *dev_priv,
 	u32 queued, count;
 	int i, index = 0;
 	long ret;
+	struct kgsl_gpu_aux_command_generic generic;
 
-	/* Aux commands don't make sense without commands */
-	if (!param->numcmds)
+	/* We support only one aux command */
+	if (param->numcmds != 1)
 		return -EINVAL;
 
 	if (!(param->flags &
 		(KGSL_GPU_AUX_COMMAND_TIMELINE)))
-		return -EINVAL;
-
-	/*
-	 * Make sure we don't overflow count. Couple of drawobjs are reserved:
-	 * One drawobj for timestamp sync and another for aux command sync.
-	 */
-	if (param->numcmds > (UINT_MAX - 2))
 		return -EINVAL;
 
 	context = kgsl_context_get_owner(dev_priv, param->context_id);
@@ -2046,13 +2081,12 @@ long kgsl_ioctl_gpu_aux_command(struct kgsl_device_private *dev_priv,
 		return -EINVAL;
 
 	/*
-	 * We have one drawobj for the timestamp sync plus one for all of the
-	 * commands
+	 * param->numcmds is always one and we have one additional drawobj
+	 * for the timestamp sync if KGSL_GPU_AUX_COMMAND_SYNC flag is passed.
+	 * On top of that we make an implicit sync object for the last queued
+	 * timestamp on this context.
 	 */
-	count = param->numcmds + 1;
-
-	if (param->flags & KGSL_GPU_AUX_COMMAND_SYNC)
-		count++;
+	count = (param->flags & KGSL_GPU_AUX_COMMAND_SYNC) ? 3 : 2;
 
 	drawobjs = kvcalloc(count, sizeof(*drawobjs), GFP_KERNEL);
 
@@ -2100,39 +2134,34 @@ long kgsl_ioctl_gpu_aux_command(struct kgsl_device_private *dev_priv,
 
 	cmdlist = u64_to_user_ptr(param->cmdlist);
 
-	/* Create a draw object for each command */
-	for (i = 0; i < param->numcmds; i++) {
-		struct kgsl_gpu_aux_command_generic generic;
+	/* Create a draw object for KGSL_GPU_AUX_COMMAND_TIMELINE */
+	if (copy_struct_from_user(&generic, sizeof(generic),
+		cmdlist, param->cmdsize)) {
+		ret = -EFAULT;
+		goto err;
+	}
 
-		if (copy_struct_from_user(&generic, sizeof(generic),
-			cmdlist, param->cmdsize)) {
-			ret = -EFAULT;
+	if (generic.type == KGSL_GPU_AUX_COMMAND_TIMELINE) {
+		struct kgsl_drawobj_timeline *timelineobj;
+
+		timelineobj = kgsl_drawobj_timeline_create(device,
+			context);
+
+		if (IS_ERR(timelineobj)) {
+			ret = PTR_ERR(timelineobj);
 			goto err;
 		}
 
-		if (generic.type == KGSL_GPU_AUX_COMMAND_TIMELINE) {
-			struct kgsl_drawobj_timeline *timelineobj;
+		drawobjs[index++] = DRAWOBJ(timelineobj);
 
-			timelineobj = kgsl_drawobj_timeline_create(device,
-				context);
-
-			if (IS_ERR(timelineobj)) {
-				ret = PTR_ERR(timelineobj);
-				goto err;
-			}
-
-			drawobjs[index++] = DRAWOBJ(timelineobj);
-
-			ret = kgsl_drawobj_add_timeline(dev_priv, timelineobj,
-				u64_to_user_ptr(generic.priv), generic.size);
-			if (ret)
-				goto err;
-		} else {
-			ret = -EINVAL;
+		ret = kgsl_drawobj_add_timeline(dev_priv, timelineobj,
+			u64_to_user_ptr(generic.priv), generic.size);
+		if (ret)
 			goto err;
-		}
 
-		cmdlist += param->cmdsize;
+	} else {
+		ret = -EINVAL;
+		goto err;
 	}
 
 	ret = device->ftbl->queue_cmds(dev_priv, context,
@@ -2836,6 +2865,9 @@ static void kgsl_process_add_stats(struct kgsl_process_private *priv,
 	unsigned int type, uint64_t size)
 {
 	u64 ret = atomic64_add_return(size, &priv->stats[type].cur);
+
+	if (type == KGSL_MEM_ENTRY_KERNEL)
+		atomic_long_add(size, &gpu_total_used);
 
 	if (ret > priv->stats[type].max)
 		priv->stats[type].max = ret;
@@ -4735,4 +4767,9 @@ int __init kgsl_core_init(void)
 err:
 	kgsl_core_exit();
 	return result;
+}
+
+u64 gpu_get_total_used(void)
+{
+	return atomic_long_read(&gpu_total_used) / PAGE_SIZE;
 }

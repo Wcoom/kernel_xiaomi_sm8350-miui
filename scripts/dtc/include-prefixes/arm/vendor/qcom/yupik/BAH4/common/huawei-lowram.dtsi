@@ -1,0 +1,14 @@
+&removed_mem {
+		no-map;
+		reg = <0x0 0xc0000000 0x0 0x5100000>;
+	};
+
+&splash_memory {
+	reg = <0x0 0xe1000000 0x0 0x00A00000>;
+	label = "cont_splash_region";
+};
+
+&dfps_data_memory {
+		reg = <0x0 0xe1A00000 0x0 0x0100000>;
+		label = "dfps_data_memory";
+	};

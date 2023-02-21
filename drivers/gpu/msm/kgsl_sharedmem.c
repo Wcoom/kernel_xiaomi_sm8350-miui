@@ -136,7 +136,7 @@ imported_mem_show(struct kgsl_process_private *priv,
 			}
 		}
 
-		/*
+        /*
 		 * If refcount on mem entry is the last refcount, we will
 		 * call kgsl_mem_entry_destroy and detach it from process
 		 * list. When there is no refcount on the process private,
@@ -426,6 +426,52 @@ static ssize_t full_cache_threshold_show(struct device *dev,
 			kgsl_driver.full_cache_threshold);
 }
 
+static ssize_t unmapped_single_detail_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	int ret = 0;
+	struct kgsl_process_private *tmp = NULL;
+	struct kgsl_process_private *cur_priv = NULL;
+	struct task_struct *ts = NULL;
+	u64 gpumem_total;
+	u64 gpumem_mapped;
+	u64 gpumem_mapped_pages;
+	u64 gpumem_unmapped_pages;
+
+	read_lock(&kgsl_driver.proclist_lock);
+	list_for_each_entry(tmp, &kgsl_driver.process_list, list) {
+		gpumem_total = 0;
+		gpumem_mapped = 0;
+		gpumem_unmapped_pages = 0;
+
+		if (ret >= PAGE_SIZE)
+			break;
+
+		cur_priv = tmp;
+		gpumem_total = atomic64_read(&cur_priv->stats[0].cur);
+		gpumem_mapped = atomic64_read(&cur_priv->gpumem_mapped);
+		if (gpumem_mapped > gpumem_total) {
+			printk(KERN_INFO "kgsl_unmapped_single: mapped bigger than total!\n"
+				"pid=%ld, mapped=%lld, total=%lld\n",
+				cur_priv->pid, gpumem_mapped, gpumem_total);
+			continue;
+		}
+
+		gpumem_mapped_pages = gpumem_mapped / PAGE_SIZE;
+		gpumem_unmapped_pages = (gpumem_total - gpumem_mapped) / PAGE_SIZE;
+		ts = get_pid_task(cur_priv->pid, PIDTYPE_PID);
+		if (ts) {
+			ret += scnprintf(buf + ret, (PAGE_SIZE - ret), "%16s %ld %lld %lld\n",
+				ts->comm, ts->tgid, gpumem_unmapped_pages, gpumem_mapped_pages);
+			put_task_struct(ts);
+		}
+	}
+	read_unlock(&kgsl_driver.proclist_lock);
+
+	return ret;
+}
+
 static DEVICE_ATTR(vmalloc, 0444, memstat_show, NULL);
 static DEVICE_ATTR(vmalloc_max, 0444, memstat_show, NULL);
 static DEVICE_ATTR(page_alloc, 0444, memstat_show, NULL);
@@ -437,6 +483,7 @@ static DEVICE_ATTR(secure_max, 0444, memstat_show, NULL);
 static DEVICE_ATTR(mapped, 0444, memstat_show, NULL);
 static DEVICE_ATTR(mapped_max, 0444, memstat_show, NULL);
 static DEVICE_ATTR_RW(full_cache_threshold);
+static DEVICE_ATTR_RO(unmapped_single_detail);
 
 static const struct attribute *drv_attr_list[] = {
 	&dev_attr_vmalloc.attr,
@@ -450,6 +497,7 @@ static const struct attribute *drv_attr_list[] = {
 	&dev_attr_mapped.attr,
 	&dev_attr_mapped_max.attr,
 	&dev_attr_full_cache_threshold.attr,
+	&dev_attr_unmapped_single_detail.attr,
 	NULL,
 };
 

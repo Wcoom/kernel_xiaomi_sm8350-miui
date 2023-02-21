@@ -22,6 +22,12 @@
 #include <linux/swap.h>
 #include <linux/splice.h>
 #include <linux/sched.h>
+#ifdef CONFIG_HW_VIP_THREAD
+#include <chipset_common/hwcfs/hwcfs_common.h>
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+#include <chipset_common/hwqos/hwqos_common.h>
+#endif
 
 MODULE_ALIAS_MISCDEV(FUSE_MINOR);
 MODULE_ALIAS("devname:fuse");
@@ -31,6 +37,79 @@ MODULE_ALIAS("devname:fuse");
 #define FUSE_REQ_ID_STEP (1ULL << 1)
 
 static struct kmem_cache *fuse_req_cachep;
+
+#ifdef CONFIG_HW_VIP_THREAD
+static void fuse_adjust_vip(struct task_struct *p,
+	struct task_struct *pi_task)
+{
+	if (test_task_vip(pi_task) && !test_dynamic_vip(p, DYNAMIC_VIP_FUSE))
+		dynamic_vip_enqueue(p, DYNAMIC_VIP_FUSE, pi_task->vip_depth);
+}
+
+static void fuse_restore_vip(struct task_struct *p)
+{
+	if (test_dynamic_vip(p, DYNAMIC_VIP_FUSE))
+		dynamic_vip_dequeue(p, DYNAMIC_VIP_FUSE);
+}
+#endif
+
+#ifdef CONFIG_HW_QOS_THREAD
+static void fuse_adjust_qos(struct task_struct *p,
+	struct task_struct *pi_task)
+{
+	int qos = get_task_qos(pi_task);
+	if (qos == VALUE_QOS_HIGH)
+		set_task_qos_by_tid(p, qos);
+	else if (qos == VALUE_QOS_CRITICAL)
+		dynamic_qos_enqueue(p, pi_task, DYNAMIC_QOS_FUSE);
+}
+
+static void fuse_restore_qos(struct task_struct *p)
+{
+	int qos = get_task_qos(p);
+	if (qos == VALUE_QOS_HIGH)
+		set_task_qos_by_tid(p, VALUE_QOS_NORMAL);
+	else if (qos == VALUE_QOS_CRITICAL)
+		dynamic_qos_dequeue(p, DYNAMIC_QOS_FUSE);
+}
+#endif
+
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+static void fuse_pi_adjust(struct fuse_req *req)
+{
+	unsigned long flags;
+	wait_queue_entry_t *curr = NULL;
+	struct task_struct *pi_task = NULL;
+
+	spin_lock_irqsave(&req->waitq.lock, flags);
+	curr = list_first_entry_or_null(&req->waitq.head,
+	    wait_queue_entry_t, entry);
+	pi_task = curr ? curr->private : NULL;
+	if (pi_task)
+		get_task_struct(pi_task);
+	spin_unlock_irqrestore(&req->waitq.lock, flags);
+	if (!pi_task)
+		return;
+
+#ifdef CONFIG_HW_VIP_THREAD
+	fuse_adjust_vip(current, pi_task);
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	fuse_adjust_qos(current, pi_task);
+#endif
+	put_task_struct(pi_task);
+}
+
+static void fuse_pi_restore(void)
+{
+#ifdef CONFIG_HW_VIP_THREAD
+	fuse_restore_vip(current);
+#endif
+#ifdef CONFIG_HW_QOS_THREAD
+	fuse_restore_qos(current);
+#endif
+}
+#endif
 
 static struct fuse_dev *fuse_get_dev(struct file *file)
 {
@@ -210,7 +289,7 @@ __releases(fiq->lock)
 	if (sync)
 		wake_up_sync(&fiq->waitq);
 	else
-		wake_up(&fiq->waitq);
+	wake_up(&fiq->waitq);
 	kill_fasync(&fiq->fasync, SIGIO, POLL_IN);
 	spin_unlock(&fiq->lock);
 }
@@ -286,10 +365,10 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 
 	/*
 	 * test_and_set_bit() implies smp_mb() between bit
-	 * changing and below intr_entry check. Pairs with
+	 * changing and below FR_INTERRUPTED check. Pairs with
 	 * smp_mb() from queue_interrupt().
 	 */
-	if (!list_empty(&req->intr_entry)) {
+	if (test_bit(FR_INTERRUPTED, &req->flags)) {
 		spin_lock(&fiq->lock);
 		list_del_init(&req->intr_entry);
 		spin_unlock(&fiq->lock);
@@ -323,6 +402,9 @@ void fuse_request_end(struct fuse_conn *fc, struct fuse_req *req)
 		spin_unlock(&fc->bg_lock);
 	} else {
 		/* Wake up waiter sleeping in request_wait_answer() */
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+		fuse_pi_restore();
+#endif
 		wake_up(&req->waitq);
 	}
 
@@ -774,6 +856,7 @@ static int fuse_check_page(struct page *page)
 	       1 << PG_uptodate |
 	       1 << PG_lru |
 	       1 << PG_active |
+	       1 << PG_workingset |
 	       1 << PG_reclaim |
 	       1 << PG_waiters))) {
 		pr_warn("trying to steal weird page\n");
@@ -841,6 +924,12 @@ static int fuse_try_move_page(struct fuse_copy_state *cs, struct page **pagep)
 		unlock_page(newpage);
 		goto out_put_old;
 	}
+
+	/*
+	 * Release while we have extra ref on stolen page.  Otherwise
+	 * anon_pipe_buf_release() might think the page can be reused.
+	 */
+	pipe_buf_release(cs->pipe, buf);
 
 	get_page(newpage);
 
@@ -930,7 +1019,17 @@ static int fuse_copy_page(struct fuse_copy_state *cs, struct page **pagep,
 
 	while (count) {
 		if (cs->write && cs->pipebufs && page) {
-			return fuse_ref_page(cs, page, offset, count);
+			/*
+			 * Can't control lifetime of pipe buffers, so always
+			 * copy user pages.
+			 */
+			if (cs->req->args->user_pages) {
+				err = fuse_copy_fill(cs);
+				if (err)
+					return err;
+			} else {
+				return fuse_ref_page(cs, page, offset, count);
+			}
 		} else if (!cs->len) {
 			if (cs->move_pages && page &&
 			    offset == 0 && count == PAGE_SIZE) {
@@ -1267,6 +1366,15 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 		goto restart;
 	}
 	spin_lock(&fpq->lock);
+	/*
+	 *  Must not put request on fpq->io queue after having been shut down by
+	 *  fuse_abort_conn()
+	 */
+	if (!fpq->connected) {
+		req->out.h.error = err = -ECONNABORTED;
+		goto out_end;
+
+	}
 	list_add(&req->list, &fpq->io);
 	spin_unlock(&fpq->lock);
 	cs->req = req;
@@ -1298,6 +1406,10 @@ static ssize_t fuse_dev_do_read(struct fuse_dev *fud, struct file *file,
 	smp_mb__after_atomic();
 	if (test_bit(FR_INTERRUPTED, &req->flags))
 		queue_interrupt(fiq, req);
+#if defined(CONFIG_HW_VIP_THREAD) || defined(CONFIG_HW_QOS_THREAD)
+	else if (!test_bit(FR_BACKGROUND, &req->flags))
+		fuse_pi_adjust(req);
+#endif
 	fuse_put_request(fc, req);
 
 	return reqsize;
@@ -1863,7 +1975,7 @@ static ssize_t fuse_dev_do_write(struct fuse_dev *fud,
 	}
 
 	err = -EINVAL;
-	if (oh.error <= -1000 || oh.error > 0)
+	if (oh.error <= -512 || oh.error > 0)
 		goto copy_finish;
 
 	spin_lock(&fpq->lock);
@@ -2027,8 +2139,12 @@ static ssize_t fuse_dev_splice_write(struct pipe_inode_info *pipe,
 
 	pipe_lock(pipe);
 out_free:
-	for (idx = 0; idx < nbuf; idx++)
-		pipe_buf_release(pipe, &bufs[idx]);
+	for (idx = 0; idx < nbuf; idx++) {
+		struct pipe_buffer *buf = &bufs[idx];
+
+		if (buf->ops)
+			pipe_buf_release(pipe, buf);
+	}
 	pipe_unlock(pipe);
 
 	kvfree(bufs);
@@ -2235,37 +2351,50 @@ static int fuse_device_clone(struct fuse_conn *fc, struct file *new)
 static long fuse_dev_ioctl(struct file *file, unsigned int cmd,
 			   unsigned long arg)
 {
-	int err = -ENOTTY;
+	int res;
+	int oldfd;
+	struct fuse_dev *fud = NULL;
 
-	if (cmd == FUSE_DEV_IOC_CLONE) {
-		int oldfd;
-
-		err = -EFAULT;
-		if (!get_user(oldfd, (__u32 __user *) arg)) {
+	switch (cmd) {
+	case FUSE_DEV_IOC_CLONE:
+		res = -EFAULT;
+		if (!get_user(oldfd, (__u32 __user *)arg)) {
 			struct file *old = fget(oldfd);
 
-			err = -EINVAL;
+			res = -EINVAL;
 			if (old) {
-				struct fuse_dev *fud = NULL;
-
 				/*
 				 * Check against file->f_op because CUSE
 				 * uses the same ioctl handler.
 				 */
 				if (old->f_op == file->f_op &&
-				    old->f_cred->user_ns == file->f_cred->user_ns)
+				    old->f_cred->user_ns ==
+					    file->f_cred->user_ns)
 					fud = fuse_get_dev(old);
 
 				if (fud) {
 					mutex_lock(&fuse_mutex);
-					err = fuse_device_clone(fud->fc, file);
+					res = fuse_device_clone(fud->fc, file);
 					mutex_unlock(&fuse_mutex);
 				}
 				fput(old);
 			}
 		}
+		break;
+	case FUSE_DEV_IOC_PASSTHROUGH_OPEN:
+		res = -EFAULT;
+		if (!get_user(oldfd, (__u32 __user *)arg)) {
+			res = -EINVAL;
+			fud = fuse_get_dev(file);
+			if (fud)
+				res = fuse_passthrough_open(fud, oldfd);
+		}
+		break;
+	default:
+		res = -ENOTTY;
+		break;
 	}
-	return err;
+	return res;
 }
 
 const struct file_operations fuse_dev_operations = {

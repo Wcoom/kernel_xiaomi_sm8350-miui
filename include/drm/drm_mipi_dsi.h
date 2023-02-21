@@ -93,8 +93,13 @@ struct mipi_dsi_host_ops {
 		      struct mipi_dsi_device *dsi);
 	int (*detach)(struct mipi_dsi_host *host,
 		      struct mipi_dsi_device *dsi);
+#ifdef CONFIG_LCD_KIT_DRIVER
+	ssize_t (*transfer)(struct mipi_dsi_host *host,
+			    struct mipi_dsi_msg *msg);
+#else
 	ssize_t (*transfer)(struct mipi_dsi_host *host,
 			    const struct mipi_dsi_msg *msg);
+#endif
 };
 
 /**

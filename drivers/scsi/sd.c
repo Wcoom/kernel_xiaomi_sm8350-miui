@@ -2989,7 +2989,6 @@ static void sd_read_block_provisioning(struct scsi_disk *sdkp)
 		return;
 
 	buffer = kmalloc(vpd_len, GFP_KERNEL);
-
 	if (!buffer || scsi_get_vpd_page(sdkp->device, 0xb2, buffer, vpd_len))
 		goto out;
 
@@ -3188,6 +3187,7 @@ static int sd_revalidate_disk(struct gendisk *disk)
 
 	/* Do not exceed controller limit */
 	rw_max = min(rw_max, queue_max_hw_sectors(q));
+	rw_max = rw_max < sdp->min_sectors ? sdp->min_sectors : rw_max;
 
 	/*
 	 * Only update max_sectors if previously unset or if the current value
@@ -3329,6 +3329,11 @@ static int sd_probe(struct device *dev)
 		sdev_printk(KERN_WARNING, sdp, "sd_probe: memory exhausted.\n");
 		goto out_put;
 	}
+	// Bug fix for disk partition drift at qcom
+#ifdef CONFIG_HUAWEI_QCOM_DISK_PARTITION_DRIFT
+	if (index < 6)
+		index = sdp->lun;
+#endif
 
 	error = sd_format_disk_name("sd", index, gd->disk_name, DISK_NAME_LEN);
 	if (error) {

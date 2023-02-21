@@ -1,0 +1,17 @@
+&soc {
+	huawei_fingerprint {
+		compatible = "fpc,fingerprint";
+		interrupt-parent = <&tlmm>;
+		interrupts = <34 0x0>;
+		fingerprint,irq_gpio = <&tlmm 34 0>;
+		fingerprint,reset_gpio = <&tlmm 35 0>;
+		fingerprint,avdd_en_gpio = <&tlmm 137 0>;
+		fingerprint,vdd_en_gpio = <&tlmm 130 0>;
+		fingerprint,navigation_adjust1 = <0>;
+		fingerprint,navigation_adjust2 = <90>;
+		status = "ok";
+	};
+};
+&fingerprint {
+	fingerprint,product = "bali";
+};

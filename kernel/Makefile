@@ -117,9 +117,18 @@ obj-$(CONFIG_JUMP_LABEL) += jump_label.o
 obj-$(CONFIG_CONTEXT_TRACKING) += context_tracking.o
 obj-$(CONFIG_TORTURE_TEST) += torture.o
 
+obj-$(CONFIG_HW_RTG) += cpu_netlink/
+
 obj-$(CONFIG_HAS_IOMEM) += iomem.o
 obj-$(CONFIG_RSEQ) += rseq.o
+obj-$(CONFIG_HW_CGROUP_WORKINGSET) += cgroup_workingset/
 
+obj-$(CONFIG_BOOT_DETECTOR) += hwbootfail/
+obj-$(CONFIG_HW_VIP_THREAD) += hwcfs/
+obj-$(CONFIG_HW_QOS_THREAD) += hwqos/
+obj-$(CONFIG_HW_VIP_THREAD) += cpu_netlink/
+obj-$(CONFIG_HW_IAWARE_THREAD_BOOST) += cpu_netlink/
+obj-$(CONFIG_HW_CPULOAD_NOTI) += cpu_netlink/
 obj-$(CONFIG_SYSCTL_KUNIT_TEST) += sysctl-test.o
 
 obj-$(CONFIG_GCC_PLUGIN_STACKLEAK) += stackleak.o

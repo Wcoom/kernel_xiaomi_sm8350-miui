@@ -1,0 +1,6 @@
+&reserved_memory{
+	pil_modem_mem: modem_region@8b800000 {
+		no-map;
+		reg = <0x0 0x8b800000 0x0 0x100000>;
+	};
+};

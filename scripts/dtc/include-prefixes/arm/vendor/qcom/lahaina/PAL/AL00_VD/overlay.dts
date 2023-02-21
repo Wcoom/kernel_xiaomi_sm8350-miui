@@ -1,0 +1,59 @@
+/dts-v1/;
+/plugin/;
+
+#include "../common/common.dtsi"
+#include "huawei_wifi.dtsi"
+#include "huawei_camera.dtsi"
+#include "huawei_rsmc.dtsi"
+#include "huawei-bt.dtsi"
+#include "huawei-lcd.dtsi"
+/ {
+    /* bsp_replace_info @ model = "Huawei Technologies, Inc. %product_name%"; */
+    model = "Huawei Technologies, Inc. PAL-AL00";
+    compatible = "qcom,lahaina-mtp", "qcom,lahaina", "qcom,mtp";
+    /* bsp_replace_info @ qcom,board-id = <%boardid% 0>; */
+    qcom,board-id = <8373 0>;
+};
+
+&rootparam {
+    /* bsp_replace_info @ qcom,boardid = <%boardid_split%>; */
+    /* auto_key_info @ name: boardid type: uint32 default: 0 */
+    qcom,boardid = <8 3 7 3>;
+    /* bsp_replace_info @ qcom,board_name = "%board_name%"; */
+    qcom,board_name = "PAL_AL00_VD";
+    /* bsp_replace_info @ qcom,product_name = "%product_name%"; */
+    qcom,product_name = "PAL_BID1203";
+    /* bsp_replace_info @ hardware_version = "%hardware_version%"; */
+    hardware_version = "SH0DBSLM";
+    /* bsp_replace_info @ huawei,modem_id = <%modem_id% 0x0>; */
+    huawei,modem_id = <1203 0x0>;
+};
+
+&qupv3_se15_i2c {
+        pca6416-gpio@20 {
+                compatible = "ti,tca6416";
+                status = "disabled";
+        };
+        hw_cpld@51 {
+            /* auto_key_info @ name: fw_update_type type: uint32 default: 0 */
+            fw_update_type = <0>;
+        };
+};
+
+&soc {
+    huawei_fingerprint {
+        compatible = "fpc,fingerprint";
+        avdd-supply = <&pm8350c_l3>;
+        fingerprint,avdd = "avdd";
+        fingerprint,avdd-min-uv = <3290000>;
+        fingerprint,avdd-max-uv = <3290000>;
+        fingerprint,avdd_en_gpio = <>;
+
+        status = "ok";
+    };
+};
+
+&direct_charge_ic {
+	vbat_en_gpio_output_value = <0>;
+	vbat_en_gpio = <&tlmm 105 0>;
+};

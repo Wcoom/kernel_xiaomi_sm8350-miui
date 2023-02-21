@@ -21,6 +21,7 @@
 #include <linux/soc/qcom/battery_charger.h>
 
 #include "leds.h"
+#include "../vendor_cam_hiview/vendor_cam_led_hiview.h"
 
 #define FLASH_LED_REVISION1			0x00
 
@@ -1343,8 +1344,10 @@ static irqreturn_t qti_flash_led_irq_handler(int irq, void *_led)
 		goto exit;
 
 	if (irq == led->led_fault_irq) {
-		if (irq_status & FLASH_LED_FAULT_RT_STS)
+		if (irq_status & FLASH_LED_FAULT_RT_STS) {
 			pr_debug("Led fault open/short/vreg_not_ready detected\n");
+			vendor_cam_led_open_short_hiview_report();
+		}
 	} else if (irq == led->all_ramp_down_done_irq) {
 		if (irq_status & FLASH_LED_ALL_RAMP_DN_DONE_RT_STS)
 			pr_debug("All LED channels ramp down done detected\n");

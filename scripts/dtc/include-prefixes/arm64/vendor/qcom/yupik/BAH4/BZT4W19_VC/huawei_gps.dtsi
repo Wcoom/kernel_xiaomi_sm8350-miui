@@ -1,0 +1,35 @@
+&qupv3_se10_spi {
+	status = "ok";
+	#address-cells = <1>;
+	#size-cells = <0>;
+	qcom,rt = <1>;
+	bcm4775_main@0 {
+		compatible = "ssp,bcm4775";
+		status = "ok";
+		reg = <0>; /* CE0 */
+		#address-cells = <1>;
+		#size-cells = <0>;
+		spi-cpol;
+		spi-cpha;
+		spi-max-frequency = <13000000>;
+		spi-bus-id = <10>;
+		mode = <0x3>;
+		spi-loop=<0x20>;
+		#enable-dma=<1>;
+		cs-line=<1>;
+		/*
+		* BCM94775 MARTS-HAT Interface Summary : BCM4775 Main
+		*/
+		main-host-name = "ttyBCM-SPI";
+		host-req-gpios = <&tlmm 45 0>;
+		mcu-req-gpios = <&pm7325_gpios 8 0>;
+		mcu-resp-gpios = <&tlmm 141 0>;
+		nstandby-gpios = <&pm8350c_gpios 9 0>;
+		interrupt-names = "gps_irq";
+		interrupt-parent = <&tlmm>;
+		interrupts = <45 0>;
+		lbs,lbs-vdd-spmu-supply = <&pm7325_l11>;
+		lbs,lbs-vdd-spmu-voltage-level = <1800000 1800000>;
+		lbs,lbs-vdd-spmu-current-level = <150000>;
+		};
+};

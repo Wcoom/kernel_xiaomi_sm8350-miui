@@ -104,6 +104,33 @@ static struct kmem_cache *ashmem_range_cachep __read_mostly;
  */
 static struct lock_class_key backing_shmem_inode_class;
 
+static atomic_long_t total_ashmem_size = ATOMIC_INIT(0);
+
+static void track_ashmem_create(struct ashmem_area *asma)
+{
+	atomic_long_add(asma->size, &total_ashmem_size);
+}
+
+static void track_ashmem_destroyed(struct ashmem_area *asma)
+{
+	atomic_long_sub(asma->size, &total_ashmem_size);
+}
+
+u64 ashmem_get_total_size(void)
+{
+	return atomic_long_read(&total_ashmem_size);
+}
+
+void ashmem_mutex_lock(void)
+{
+	mutex_lock(&ashmem_mutex);
+}
+
+void ashmem_mutex_unlock(void)
+{
+	mutex_unlock(&ashmem_mutex);
+}
+
 static inline unsigned long range_size(struct ashmem_range *range)
 {
 	return range->pgend - range->pgstart + 1;
@@ -286,8 +313,10 @@ static int ashmem_release(struct inode *ignored, struct file *file)
 		range_del(range);
 	mutex_unlock(&ashmem_mutex);
 
-	if (asma->file)
+	if (asma->file) {
+		track_ashmem_destroyed(asma);
 		fput(asma->file);
+	}
 	kmem_cache_free(ashmem_area_cachep, asma);
 
 	return 0;
@@ -831,6 +860,7 @@ static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		if (!asma->file) {
 			ret = 0;
 			asma->size = (size_t)arg;
+			track_ashmem_create(asma);
 		}
 		mutex_unlock(&ashmem_mutex);
 		break;
@@ -919,6 +949,31 @@ static struct miscdevice ashmem_misc = {
 	.fops = &ashmem_fops,
 };
 
+bool is_ashmem(struct file *f)
+{
+	if (f && f->f_op && f->f_op == &ashmem_fops)
+		return true;
+	return false;
+}
+
+size_t get_ashmem_size_by_file(struct file *f)
+{
+	struct ashmem_area *asma = f->private_data;
+
+	if (asma)
+		return asma->size;
+	return 0;
+}
+
+char* get_ashmem_name_by_file(struct file *f)
+{
+	struct ashmem_area *asma = f->private_data;
+
+	if (asma)
+		return asma->name;
+	return NULL;
+}
+
 static int __init ashmem_init(void)
 {
 	int ret = -ENOMEM;
@@ -951,6 +1006,7 @@ static int __init ashmem_init(void)
 		goto out_demisc;
 	}
 
+	mm_ashmem_process_info();
 	pr_info("initialized\n");
 
 	return 0;

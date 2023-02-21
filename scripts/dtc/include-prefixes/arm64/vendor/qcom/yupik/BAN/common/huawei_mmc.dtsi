@@ -1,0 +1,50 @@
+&apps_rsc{
+	rpmh-regulator-ldoc6 {
+		L6C:
+		pm8350c_l6: regulator-pm8350c-l6 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2960000>;
+			qcom,init-voltage = <1808000>;
+		};
+	};
+
+	rpmh-regulator-ldoc9 {
+		L9C:
+		pm8350c_l9: regulator-pm8350c-l9 {
+			regulator-min-microvolt = <2960000>;
+			regulator-max-microvolt = <3008000>;
+			qcom,init-voltage = <2960000>;
+		};
+	};
+};
+
+&sdhc_2 {
+	pinctrl-names = "default", "sleep", "sd_off", "sim_off";
+	pinctrl-0 = <&sdc2_on>;
+	pinctrl-1 = <&sdc2_off>;
+	pinctrl-2 = <&sdc2_sd_off>;
+	pinctrl-3 = <&sdc2_sim_off>;
+
+	vdd-supply = <&L9C>;
+	qcom,vdd-voltage-level = <2960000 2960000>;
+	qcom,vdd-current-level = <0 800000>;
+
+	vdd-io-supply = <&L6C>;
+	qcom,vdd-io-voltage-level = <1808000 2960000>;
+	qcom,vdd-io-current-level = <0 150000>;
+
+	vdd-sim-supply = <&L5C>;
+	qcom,vdd-sim-voltage-level = <1808000 2960000>;
+	qcom,vdd-sim-current-level = <0 150000>;
+
+	cd-gpios = <&tlmm 91 GPIO_ACTIVE_HIGH>;
+
+	sim-dat-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>;
+	sim-clk-gpios = <&tlmm 110 GPIO_ACTIVE_HIGH>;
+	sim-rst-gpios = <&tlmm 111 GPIO_ACTIVE_HIGH>;
+
+	sd-sim-gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>;
+	sd-sim-mux = <1>;
+
+	status = "ok";
+};

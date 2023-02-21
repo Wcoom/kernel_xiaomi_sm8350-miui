@@ -1,0 +1,70 @@
+#include "camera-sensor-v1.dtsi"
+
+&soc {
+	qcom,cam-res-mgr {
+		compatible = "qcom,cam-res-mgr";
+		status = "ok";
+		gpios-shared = <286 293 304 306 436 494 496>;
+		pinctrl-names = "cam_active", "cam_suspend";
+		pinctrl-0 = <&mcam_iovdd_active
+					&front_active_rst0
+					&fcam_avdd_active_tlmm
+					&mcam_avdd1_active>;
+		pinctrl-1 = <&mcam_iovdd_suspend
+					&front_suspend_rst0
+					&fcam_avdd_suspend_tlmm
+					&mcam_avdd1_suspend>;
+	};
+};
+
+&tlmm {
+	fcam_avdd_active_tlmm: fcam_avdd_active_tlmm {
+		/* fcam avdd */
+		mux {
+			pins = "gpio188";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio188";
+			bias-disable; /* No PULL */
+			drive-strength = <2>; /* 2 MA */
+		};
+	};
+	fcam_avdd_suspend_tlmm: fcam_avdd_suspend_tlmm {
+		/* fcam avdd */
+		mux {
+			pins = "gpio188";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio188";
+			bias-pull-down; /* PULL DOWN */
+			drive-strength = <2>; /* 2 MA */
+			output-low;
+		};
+	};
+};
+
+&cam_cci0 {
+	/* back tele sensor */
+	qcom,cam-sensor2 {
+		gpios = <&tlmm 100 0>,
+			<&pm8350b_gpios 8 0>,
+			<&tlmm 128 0>,
+			<&tlmm 188 0>,
+			<&pmk8350_gpios 1 0>;
+	};
+};
+
+&cam_cci1 {
+	/* front main sensor */
+	qcom,cam-sensor3 {
+		gpios = <&tlmm 101 0>,
+			<&tlmm 17 0>,
+			<&tlmm 188 0>,
+			<&tlmm 72 0>;
+	};
+
+};

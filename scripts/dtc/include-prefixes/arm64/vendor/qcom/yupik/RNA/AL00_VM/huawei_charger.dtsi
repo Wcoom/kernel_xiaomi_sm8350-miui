@@ -1,0 +1,40 @@
+&qupv3_se2_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	charge_pump_pca9488_aux@5F {
+		compatible = "pca9488_aux";
+		reg = <0x5F>;
+		pinctrl-names = "hvsc_aux_irq_pins_default";
+		pinctrl-0 = <&hvsc_aux_irq_pins_default>;
+		gpio_int = <&tlmm 47 0>;
+		cp_freq = <1250>;
+		status = "ok";
+	};
+};
+
+&qupv3_se3_i2c {
+	rt9426_battery@55{
+		rt_config_ver = <14>;
+		battery0{
+			batt_name = "BCYCAE_3900_4450_v0";
+			#include "../../../huawei_charger/rt9426_0P5mohm_BITCAE_3900mAh_4V45_BT216.dtsi"
+		};
+		battery1{
+			batt_name = "BYTCAE_3900_4450_v0";
+			#include "../../../huawei_charger/rt9426_0P5mohm_BITCAE_3900mAh_4V45_BT216.dtsi"
+		};
+	};
+};
+
+&qupv3_se15_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	charge_pump_pca9488@5F {
+		compatible = "charge_pump_pca9488";
+		reg = <0x5F>;
+		pinctrl-names = "hvsc_main_irq_pins_default";
+		pinctrl-0 = <&hvsc_main_irq_pins_default>;
+		gpio_int = <&tlmm 15 0>;
+		status = "ok";
+	};
+};

@@ -104,6 +104,10 @@
  */
 #define CRYPTO_NOLOAD			0x00008000
 
+#ifdef CONFIG_CRYPTO_DELTA
+#define CRYPTO_ALG_EXT_PROP_DELTA		0x00010000
+#endif
+
 /*
  * Transform masks and values (for crt_flags).
  */
@@ -338,6 +342,14 @@ struct compress_alg {
 			    unsigned int slen, u8 *dst, unsigned int *dlen);
 	int (*coa_decompress)(struct crypto_tfm *tfm, const u8 *src,
 			      unsigned int slen, u8 *dst, unsigned int *dlen);
+#ifdef CONFIG_CRYPTO_DELTA
+	int (*coa_compress_delta)(struct crypto_tfm *tfm, const u8 *src,
+			const u8 *src0, unsigned int slen, u8 *dst,
+			unsigned int *dlen, unsigned int out_max);
+	int (*coa_decompress_delta)(struct crypto_tfm *tfm, const u8 *src,
+			unsigned int slen, const u8 *dst0, u8 *dst,
+			unsigned int *dlen);
+#endif
 };
 
 #ifdef CONFIG_CRYPTO_STATS
@@ -574,7 +586,7 @@ struct crypto_alg {
 	int (*cra_init)(struct crypto_tfm *tfm);
 	void (*cra_exit)(struct crypto_tfm *tfm);
 	void (*cra_destroy)(struct crypto_alg *alg);
-	
+
 	struct module *cra_module;
 
 #ifdef CONFIG_CRYPTO_STATS
@@ -708,6 +720,9 @@ int crypto_unregister_algs(struct crypto_alg *algs, int count);
  * Algorithm query interface.
  */
 int crypto_has_alg(const char *name, u32 type, u32 mask);
+#ifdef CONFIG_CRYPTO_DELTA
+int crypto_alg_prop_check(const char *name, u32 type, u32 mask, u32 flag);
+#endif
 
 /*
  * Transforms: user-instantiated objects which encapsulate algorithms
@@ -751,6 +766,14 @@ struct compress_tfm {
 	int (*cot_decompress)(struct crypto_tfm *tfm,
 	                      const u8 *src, unsigned int slen,
 	                      u8 *dst, unsigned int *dlen);
+#ifdef CONFIG_CRYPTO_DELTA
+	int (*cot_compress_delta)(struct crypto_tfm *tfm,
+			    const u8 *src0, const u8 *src, unsigned int slen,
+			    u8 *dst, unsigned int *dlen, unsigned int out_max);
+	int (*cot_decompress_delta)(struct crypto_tfm *tfm,
+			    const u8 *src, unsigned int slen, const u8 *dst0,
+			    u8 *dst, unsigned int *dlen);
+#endif
 };
 
 #define crt_ablkcipher	crt_u.ablkcipher
@@ -761,7 +784,7 @@ struct compress_tfm {
 struct crypto_tfm {
 
 	u32 crt_flags;
-	
+
 	union {
 		struct ablkcipher_tfm ablkcipher;
 		struct blkcipher_tfm blkcipher;
@@ -770,7 +793,7 @@ struct crypto_tfm {
 	} crt_u;
 
 	void (*exit)(struct crypto_tfm *tfm);
-	
+
 	struct crypto_alg *__crt_alg;
 
 	void *__crt_ctx[] CRYPTO_MINALIGN_ATTR;
@@ -818,10 +841,10 @@ struct crypto_attr_u32 {
 	u32 num;
 };
 
-/* 
+/*
  * Transform user interface.
  */
- 
+
 struct crypto_tfm *crypto_alloc_base(const char *alg_name, u32 type, u32 mask);
 void crypto_destroy_tfm(void *mem, struct crypto_tfm *tfm);
 
@@ -1821,6 +1844,16 @@ static inline int crypto_has_comp(const char *alg_name, u32 type, u32 mask)
 	return crypto_has_alg(alg_name, type, mask);
 }
 
+#ifdef CONFIG_CRYPTO_DELTA
+static inline int crypto_has_delta_comp(const char *alg_name, u32 type, u32 mask)
+{
+	type &= ~CRYPTO_ALG_TYPE_MASK;
+	type |= CRYPTO_ALG_TYPE_COMPRESS;
+	mask |= CRYPTO_ALG_TYPE_MASK;
+	return crypto_alg_prop_check(alg_name, type, mask, CRYPTO_ALG_EXT_PROP_DELTA);
+}
+#endif
+
 static inline const char *crypto_comp_name(struct crypto_comp *tfm)
 {
 	return crypto_tfm_alg_name(crypto_comp_tfm(tfm));
@@ -1844,8 +1877,26 @@ static inline int crypto_comp_decompress(struct crypto_comp *tfm,
                                          u8 *dst, unsigned int *dlen)
 {
 	return crypto_comp_crt(tfm)->cot_decompress(crypto_comp_tfm(tfm),
-						    src, slen, dst, dlen);
+					src, slen, dst, dlen);
 }
+
+#ifdef CONFIG_CRYPTO_DELTA
+static inline int crypto_comp_compress_delta(struct crypto_comp *tfm,
+				const u8 *src0, const u8 *src, unsigned int slen,
+				u8 *dst, unsigned int *dlen, unsigned int out_max)
+{
+	return crypto_comp_crt(tfm)->cot_compress_delta(crypto_comp_tfm(tfm),
+					src0, src, slen, dst, dlen, out_max);
+}
+
+static inline int crypto_comp_decompress_delta(struct crypto_comp *tfm, const u8 *src,
+				unsigned int slen, const u8 *dst0, u8 *dst,
+				unsigned int *dlen)
+{
+	return crypto_comp_crt(tfm)->cot_decompress_delta(crypto_comp_tfm(tfm),
+					src, slen, dst0, dst, dlen);
+}
+#endif
 
 #endif	/* _LINUX_CRYPTO_H */
 

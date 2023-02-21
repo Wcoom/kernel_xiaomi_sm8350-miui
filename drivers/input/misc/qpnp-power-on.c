@@ -26,6 +26,17 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
+#include <platform/trace/events/zerohung.h>
+#include <huawei_platform/ap_hall/ext_hall_event.h>
+
+#ifdef CONFIG_HW_COMB_KEY
+#include <huawei_platform/comb_key/power_key_event.h>
+#include <huawei_platform/comb_key/volume_key_event.h>
+#endif
+
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+#include <hwbootfail/chipsets/bootfail_qcom.h>
+#endif
 
 #define PMIC_VER_8941				0x01
 #define PMIC_VERSION_REG			0x0105
@@ -166,6 +177,11 @@ enum qpnp_pon_version {
 
 #define QPNP_POFF_REASON_UVLO			13
 
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+#define BF_PWK_PRESS_FLAG 128
+#define BF_PWK_RELEASE_FLAG 0
+#endif
+
 enum pon_type {
 	PON_KPDPWR	 = PON_POWER_ON_TYPE_KPDPWR,
 	PON_RESIN	 = PON_POWER_ON_TYPE_RESIN,
@@ -246,6 +262,9 @@ struct qpnp_pon {
 	bool			legacy_hard_reset_offset;
 };
 
+static bool is_support_fold_key;
+static unsigned long ext_fold_val_status = DEFALT_EXT_HALL_FOLD_STATUS;
+static int exchange_to_fold = DEFALT_EXT_HALL_FOLD_STATUS;
 static struct qpnp_pon *sys_reset_dev;
 static struct qpnp_pon *modem_reset_dev;
 static DEFINE_SPINLOCK(spon_list_slock);
@@ -316,6 +335,9 @@ static const char * const qpnp_poff_reason[] = {
 	[38] = "Triggered from S3_RESET_PBS_NACK",
 	[39] = "Triggered from S3_RESET_KPDPWR_ANDOR_RESIN",
 };
+
+DEFINE_TRACE(hung_wp_screen_qcom_pkey_press);
+DEFINE_TRACE(hung_wp_screen_powerkey_ncb);
 
 static int qpnp_pon_store_reg(struct qpnp_pon *pon, u16 addr)
 {
@@ -976,6 +998,25 @@ static struct qpnp_pon_config *qpnp_get_cfg(struct qpnp_pon *pon, u32 pon_type)
 	return NULL;
 }
 
+static int get_ext_fold_status(void)
+{
+	return (int)ext_fold_val_status;
+}
+
+static int ext_fold_status_notifier_keydown(struct notifier_block *nb,
+	unsigned long foo, void *bar)
+{
+	(void)bar;
+	pr_info("%s recv fold status = %lu\n", __func__, foo);
+	ext_fold_val_status = foo;
+	return 0;
+}
+
+static struct notifier_block keydown_ext_fold_notify = {
+	.notifier_call = ext_fold_status_notifier_keydown,
+	.priority = -1,
+};
+
 static int qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 {
 	struct qpnp_pon_config *cfg = NULL;
@@ -1032,6 +1073,34 @@ static int qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 		pon_rt_sts);
 	key_status = pon_rt_sts & pon_rt_bit;
 
+	pr_err("PMIC input: code=%d, pon_type =%u, key_status=0x%02X\n", cfg->key_code, cfg->pon_type,
+		key_status);
+
+#ifdef CONFIG_BOOT_DETECTOR_QCOM
+	if (cfg->pon_type == PON_KPDPWR) {
+		if (key_status == BF_PWK_PRESS_FLAG) {
+			pr_debug("bootfail_pwk_check:press\n");
+			bootfail_pwk_press();
+		} else if (key_status == BF_PWK_RELEASE_FLAG) {
+			pr_debug("bootfail_pwk_check:release\n");
+			bootfail_pwk_release();
+		}
+	}
+#endif
+	/*
+	 * number 1 means WP_SCREEN_PWK_RELEASE
+	 */
+	trace_hung_wp_screen_qcom_pkey_press(cfg->pon_type, key_status);
+	if (cfg->pon_type == PON_KPDPWR)
+		trace_hung_wp_screen_powerkey_ncb(1 ^ key_status);
+
+#ifdef CONFIG_HW_COMB_KEY
+	if (cfg->pon_type == PON_KPDPWR)
+		power_key_status_distinguish(!!key_status);
+	if (cfg->pon_type == PON_RESIN)
+		volume_key_status_distinguish(!!key_status);
+#endif
+
 	if (pon->kpdpwr_dbc_enable && cfg->pon_type == PON_KPDPWR) {
 		if (!key_status)
 			pon->kpdpwr_last_release_time = ktime_get();
@@ -1042,8 +1111,28 @@ static int qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 	 * event
 	 */
 	if (!cfg->old_state && !key_status) {
+		if (strstr(saved_command_line, "enter_recovery=1")) {
+			pr_info("old_state %d, key_status %d, pon_type %d",
+				cfg->old_state, key_status, cfg->pon_type);
+			return 0;
+		}
 		input_report_key(pon->pon_input, cfg->key_code, 1);
 		input_sync(pon->pon_input);
+	}
+
+	if (is_support_fold_key && cfg->key_code == KEY_VOLUMEDOWN) {
+		if (!!key_status) {
+			pr_info("force update fold_status\n");
+			exchange_to_fold = get_ext_fold_status();
+		}
+		if (exchange_to_fold == 0)
+			input_report_key(pon->pon_input, KEY_VOLUMEUP, key_status);
+		else
+			input_report_key(pon->pon_input, KEY_VOLUMEDOWN, key_status);
+		input_sync(pon->pon_input);
+
+		cfg->old_state = !!key_status;
+		return 0;
 	}
 
 	input_report_key(pon->pon_input, cfg->key_code, key_status);
@@ -1739,8 +1828,15 @@ static int qpnp_pon_config_init(struct qpnp_pon *pon,
 
 		/* Get the pull-up configuration */
 		cfg->pull_up = of_property_read_bool(cfg_node, "qcom,pull-up");
+		if (of_property_read_bool(cfg_node, "is_support_fold_key")) {
+			is_support_fold_key = true;
+			dev_err(pon->dev, "is_support_fold_key available\n");
+		}
 	}
-
+	if (is_support_fold_key && pon->pon_input) {
+		input_set_capability(pon->pon_input, EV_KEY, KEY_VOLUMEUP);
+		ext_fold_register_notifier(&keydown_ext_fold_notify);
+	}
 	pmic_wd_bark_irq = platform_get_irq_byname(pdev, "pmic-wd-bark");
 	/* Request the pmic-wd-bark irq only if it is defined */
 	if (pmic_wd_bark_irq >= 0) {
@@ -2485,6 +2581,11 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 
 	qpnp_pon_debugfs_init(pon);
 
+#ifdef CONFIG_HW_COMB_KEY
+	power_key_nb_init();
+	volume_key_nb_init();
+#endif
+
 	return 0;
 }
 
@@ -2573,6 +2674,9 @@ static struct platform_driver qpnp_pon_driver = {
 	.probe = qpnp_pon_probe,
 	.remove = qpnp_pon_remove,
 };
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(hung_wp_screen_qcom_pkey_press);
+EXPORT_TRACEPOINT_SYMBOL_GPL(hung_wp_screen_powerkey_ncb);
 
 static int __init qpnp_pon_init(void)
 {

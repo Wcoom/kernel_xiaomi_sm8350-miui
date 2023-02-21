@@ -20,3 +20,5 @@ gnss-ubx-y := ubx.o
 
 obj-$(CONFIG_GNSS_CMDLINE_SERIAL)	+= gnss-cmdline.o
 gnss-cmdline-y := cmdline.o
+
+obj-y						+= lbs/

@@ -1074,6 +1074,26 @@ static int __fragmentation_index(unsigned int order, struct contig_page_info *in
 	return 1000 - div_u64( (1000+(div_u64(info->free_pages * 1000ULL, requested))), info->free_blocks_total);
 }
 
+#ifdef CONFIG_COMPACTION_PROACTIVE
+/*
+ * Calculates external fragmentation within a zone wrt the given order.
+ * It is defined as the percentage of pages found in blocks of size
+ * less than 1 << order. It returns values in range [0, 100].
+ */
+unsigned int extfrag_for_order(struct zone *zone, unsigned int order)
+{
+	struct contig_page_info info;
+
+	fill_contig_page_info(zone, order, &info);
+	if (info.free_pages == 0)
+		return 0;
+
+	return div_u64((info.free_pages -
+			(info.free_blocks_suitable << order)) * 100,
+			info.free_pages);
+}
+#endif
+
 /* Same as __fragmentation index but allocs contig_page_info on stack */
 int fragmentation_index(struct zone *zone, unsigned int order)
 {
@@ -1114,6 +1134,12 @@ const char * const vmstat_text[] = {
 	"nr_zone_inactive_file",
 	"nr_zone_active_file",
 	"nr_zone_unevictable",
+#ifdef CONFIG_TASK_PROTECT_LRU
+	"nr_inactive_prot_anon",
+	"nr_active_prot_anon",
+	"nr_inactive_prot_file",
+	"nr_active_prot_file",
+#endif
 	"nr_zone_write_pending",
 	"nr_mlock",
 	"nr_page_table_pages",
@@ -1127,6 +1153,12 @@ const char * const vmstat_text[] = {
 #endif
 	"nr_free_cma",
 
+#ifdef CONFIG_DFX_MEMCHECK
+	"nr_skb_pages",
+	"nr_vmalloc_pages",
+	"nr_lslab_pages",
+	"nr_buddy_pages",
+#endif
 	/* enum numa_stat_item counters */
 #ifdef CONFIG_NUMA
 	"numa_hit",
@@ -1303,6 +1335,33 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_SPECULATIVE_PAGE_FAULT
 	"speculative_pgfault_anon",
 	"speculative_pgfault_file",
+#endif
+#ifdef CONFIG_HYPERHOLD_ZSWAPD
+	"zswapd_running",
+	"zswapd_hit_refaults",
+	"zswapd_medium_press",
+	"zswapd_critical_press",
+	"zswapd_memcg_ratio_skip",
+	"zswapd_memcg_refault_skip",
+	"zswapd_swapout",
+	"zswapd_empty_round",
+	"zswapd_empty_round_skip_times",
+	"zswapd_snapshot_times",
+	"zswapd_reclaimed",
+	"zswapd_scanned",
+	"zswapd_swapfull_times",
+#endif
+#ifdef CONFIG_HYPERHOLD
+	"kswapd_reclaimed_anon",
+	"kswapd_reclaimed_file",
+	"kswapd_scan_anon",
+	"kswapd_scan_file",
+	"dr_reclaimed_anon",
+	"dr_reclaimed_file",
+	"dr_scan_anon",
+	"dr_scan_file",
+	"freeze_reclaim_times",
+	"freeze_reclaimed",
 #endif
 #endif /* CONFIG_VM_EVENT_COUNTERS */
 };

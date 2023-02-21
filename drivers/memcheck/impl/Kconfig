@@ -1,0 +1,16 @@
+config DFX_MEMCHECK_EXT
+	depends on DFX_MEMCHECK
+	bool "Dfx get ion mem info"
+	default n
+	help
+		This option enables ion or gpu trace, needed by memleak check modules
+		you can disable it if your chipset cannot support ion
+		it depend on the ability of your chip
+		we add this config for you to facilitate to close it
+
+config DFX_MEMCHECK_TEST
+	depends on DFX_MEMCHECK
+	bool "MM page trace test"
+	default n
+	help
+		This option enables mm page trace test, needed by mm page trace modules.

@@ -498,6 +498,7 @@ static struct clk_regmap_mux gcc_usb3_sec_phy_pipe_clk_src = {
 };
 
 static const struct freq_tbl ftbl_gcc_gp1_clk_src[] = {
+	F(19200000, P_BI_TCXO, 1, 0, 0),
 	F(50000000, P_GCC_GPLL0_OUT_EVEN, 6, 0, 0),
 	F(100000000, P_GCC_GPLL0_OUT_EVEN, 3, 0, 0),
 	F(200000000, P_GCC_GPLL0_OUT_ODD, 1, 0, 0),
@@ -527,13 +528,18 @@ static struct clk_rcg2 gcc_gp1_clk_src = {
 	},
 };
 
+static const struct freq_tbl ftbl_gcc_gp2_clk_src[] = {
+	F(19200, P_BI_TCXO, 32, 4, 125),
+	{ }
+};
+
 static struct clk_rcg2 gcc_gp2_clk_src = {
 	.cmd_rcgr = 0x65004,
 	.mnd_width = 16,
 	.hid_width = 5,
 	.parent_map = gcc_parent_map_4,
-	.freq_tbl = ftbl_gcc_gp1_clk_src,
-	.enable_safe_config = true,
+	.freq_tbl = ftbl_gcc_gp2_clk_src,
+	.enable_safe_config = false,
 	.clkr.hw.init = &(struct clk_init_data){
 		.name = "gcc_gp2_clk_src",
 		.parent_data = gcc_parent_data_4,
@@ -1186,6 +1192,7 @@ static const struct freq_tbl ftbl_gcc_sdcc2_apps_clk_src[] = {
 	F(25000000, P_GCC_GPLL0_OUT_EVEN, 12, 0, 0),
 	F(50000000, P_GCC_GPLL0_OUT_EVEN, 6, 0, 0),
 	F(100000000, P_GCC_GPLL0_OUT_EVEN, 3, 0, 0),
+	F(179555556, P_GCC_GPLL9_OUT_MAIN, 4.5, 0, 0),
 	F(202000000, P_GCC_GPLL9_OUT_MAIN, 4, 0, 0),
 	{ }
 };

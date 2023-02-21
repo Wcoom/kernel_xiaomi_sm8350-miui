@@ -215,4 +215,8 @@ else
 	fi
 fi
 
-echo "$res"
+if [ -z "$KBUILD_BUILD_KERNELRELEASE" ]; then
+	echo "$res"
+else
+	echo "$KBUILD_BUILD_KERNELRELEASE"
+fi

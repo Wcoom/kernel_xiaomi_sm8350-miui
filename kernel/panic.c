@@ -31,6 +31,7 @@
 #include <linux/bug.h>
 #include <linux/ratelimit.h>
 #include <linux/debugfs.h>
+#include <linux/pmic-cpu-log.h>
 #include <asm/sections.h>
 
 #define PANIC_TIMER_STEP 100
@@ -203,6 +204,7 @@ void panic(const char *fmt, ...)
 	if (old_cpu != PANIC_CPU_INVALID && old_cpu != this_cpu)
 		panic_smp_self_stop();
 
+	save_cpu_info(this_cpu);
 	console_verbose();
 	bust_spinlocks(1);
 	va_start(args, fmt);

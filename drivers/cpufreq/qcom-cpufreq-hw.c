@@ -17,6 +17,10 @@
 #include <linux/pm_opp.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#if defined(CONFIG_HW_MNTN_FACOTORY) && defined(CONFIG_HW_NVE)
+#include <linux/mtd/hw_nve_interface.h>
+#include <securec.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/dcvsh.h>
@@ -32,6 +36,32 @@
 #define MAX_FN_SIZE			20
 #define LIMITS_POLLING_DELAY_MS		10
 #define MAX_ROW				2
+#define MIN_VALID_FREQUENCY		691200
+#if defined(CONFIG_HW_MNTN_FACOTORY) && defined(CONFIG_HW_NVE)
+#define FREQ_CLU_NUM			3
+#define LIT_NV_NUM			273
+#define MID_NV_NUM			266
+#define BIG_NV_NUM			267
+#define MIN_NV_INDEX			0
+#define MAX_NV_INDEX			100
+#define SYMBOL_BIT			5
+#define NV_INDEX_SIG			1
+#define NV_INDEX_DOU			2
+#define NV_VALID_SIZE			104
+#define VALID_BIT			0
+#define LIT_CPU_NUM			4
+#define MID_CPU_NUM			3
+#define LIT_MIN_POSI			0
+#define LIT_MAX_POSI			1
+#define MID_MIN_POSI			2
+#define MID_MAX_POSI			3
+#define BIG_MIN_POSI			4
+#define BIG_MAX_POSI			5
+#endif
+
+#ifdef CONFIG_DRG
+#include <linux/drg.h>
+#endif
 
 #define CYCLE_CNTR_OFFSET(c, m, acc_count)				\
 			(acc_count ? ((c - cpumask_first(m) + 1) * 4) : 0)
@@ -65,9 +95,11 @@ struct cpufreq_qcom {
 	int sdpm_base_count;
 	cpumask_t related_cpus;
 	unsigned long dcvsh_freq_limit;
+	unsigned long hard_freq;
 	struct delayed_work freq_poll_work;
 	struct mutex dcvsh_lock;
 	struct device_attribute freq_limit_attr;
+	struct device_attribute hard_freq_attr;
 	int dcvsh_irq;
 	char dcvsh_irq_name[MAX_FN_SIZE];
 	bool is_irq_enabled;
@@ -102,6 +134,14 @@ static const u16 cpufreq_qcom_epss_std_offsets[REG_ARRAY_SIZE] = {
 
 static struct cpufreq_qcom *qcom_freq_domain_map[NR_CPUS];
 static struct cpufreq_counter qcom_cpufreq_counter[NR_CPUS];
+#if defined(CONFIG_HW_MNTN_FACOTORY) && defined(CONFIG_HW_NVE)
+static int freq_rang[] = {
+	MIN_NV_INDEX, MAX_NV_INDEX, MIN_NV_INDEX,
+	MAX_NV_INDEX, MIN_NV_INDEX, MAX_NV_INDEX
+};
+static int nv_num[] = { LIT_NV_NUM, MID_NV_NUM, BIG_NV_NUM };
+static int get_nv_flag = 0;
+#endif
 
 static unsigned int qcom_cpufreq_hw_get(unsigned int cpu);
 
@@ -111,6 +151,21 @@ static ssize_t dcvsh_freq_limit_show(struct device *dev,
 	struct cpufreq_qcom *c = container_of(attr, struct cpufreq_qcom,
 						freq_limit_attr);
 	return scnprintf(buf, PAGE_SIZE, "%lu\n", c->dcvsh_freq_limit);
+}
+
+static ssize_t hard_freq_limit_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct cpufreq_qcom *c = container_of(attr, struct cpufreq_qcom,
+						hard_freq_attr);
+	unsigned long hard_freq;
+
+	hard_freq = readl_relaxed(c->base + offsets[REG_DOMAIN_STATE]) &
+				GENMASK(7, 0);
+	hard_freq = DIV_ROUND_CLOSEST_ULL(hard_freq * xo_rate, 1000);
+	c->hard_freq = hard_freq;
+
+	return scnprintf(buf, PAGE_SIZE, "%lu\n", c->hard_freq);
 }
 
 static unsigned long limits_mitigation_notify(struct cpufreq_qcom *c,
@@ -155,7 +210,7 @@ static void limits_dcvsh_poll(struct work_struct *work)
 
 	dcvsh_freq = qcom_cpufreq_hw_get(cpu);
 
-	if (freq_limit != dcvsh_freq) {
+	if (freq_limit < dcvsh_freq) {
 		mod_delayed_work(system_highpri_wq, &c->freq_poll_work,
 				msecs_to_jiffies(LIMITS_POLLING_DELAY_MS));
 	} else {
@@ -234,14 +289,101 @@ static u64 qcom_cpufreq_get_cpu_cycle_counter(int cpu)
 
 	return cycle_counter_ret;
 }
+#ifdef CONFIG_HUAWEI_BB
+int rdr_cpufreq_trace(const struct cpufreq_policy *policy, unsigned int index);
+#endif
+
+#if defined(CONFIG_HW_MNTN_FACOTORY) && defined(CONFIG_HW_NVE)
+static int get_cpufreg_rang(void)
+{
+	struct hw_nve_info_user *nv_info = NULL;
+	char data[NV_VALID_SIZE + 1] = { 0 };
+	int j;
+
+	for (j = 0; j < FREQ_CLU_NUM; j++) {
+		nv_info = kzalloc(sizeof(*nv_info), GFP_KERNEL);
+		if (!nv_info)
+			return -EINVAL;
+		nv_info->nv_operation = NV_READ;
+		nv_info->nv_number = nv_num[j];
+		nv_info->valid_size = NV_VALID_SIZE;
+		if (hw_nve_direct_access(nv_info)) {
+			pr_err("nv %d read fail\n", nv_num[j]);
+			kfree(nv_info);
+			return -EINVAL;
+		}
+		memcpy_s(data, sizeof(data), nv_info->nv_data, (size_t)nv_info->valid_size);
+		kfree(nv_info);
+
+		if (data[VALID_BIT] != '1') {
+			continue;
+		} else {
+			if (data[SYMBOL_BIT] == ',') {
+				freq_rang[2 * j] = data[SYMBOL_BIT - NV_INDEX_SIG] - '0';
+				if (data[SYMBOL_BIT + NV_INDEX_SIG + 1] == ';')
+					freq_rang[2 * j + 1] = data[SYMBOL_BIT + NV_INDEX_SIG] - '0';
+				if (data[SYMBOL_BIT + NV_INDEX_DOU + 1] == ';')
+					freq_rang[2 * j + 1] = (data[SYMBOL_BIT + NV_INDEX_SIG] - '0')*10 +
+							       (data[SYMBOL_BIT + NV_INDEX_DOU] - '0');
+			}
+			if (data[SYMBOL_BIT + 1] == ',') {
+				freq_rang[2 * j] = (data[SYMBOL_BIT - 1] - '0')*10 + (data[SYMBOL_BIT] - '0');
+				if (data[SYMBOL_BIT + 1 + NV_INDEX_SIG + 1] == ';')
+					freq_rang[2 * j + 1] = data[SYMBOL_BIT + 1 + NV_INDEX_SIG] - '0';
+				if (data[SYMBOL_BIT + 1 + NV_INDEX_DOU + 1] == ';')
+					freq_rang[2 * j + 1] = (data[SYMBOL_BIT + 1 + NV_INDEX_SIG] - '0')*10 +
+							       (data[SYMBOL_BIT + 1 + NV_INDEX_DOU]  - '0');
+			}
+		}
+		if ((freq_rang[2 * j] < MIN_NV_INDEX) || (freq_rang[2 * j + 1] > MAX_NV_INDEX) ||
+		    ((freq_rang[2 * j] > freq_rang[2 * j + 1]))) {
+			freq_rang[2 * j] = MIN_NV_INDEX;
+			freq_rang[2 * j + 1] = MAX_NV_INDEX;
+		}
+	}
+
+	get_nv_flag = 1;
+	return 0;
+}
+
+static unsigned int cpufreq_index_modify(struct cpufreq_policy *policy,
+					 unsigned int index)
+{
+	if (get_nv_flag == 0)
+		get_cpufreg_rang();
+
+	if (policy->cpu < LIT_CPU_NUM) {
+		if (index < freq_rang[LIT_MIN_POSI])
+			index = freq_rang[LIT_MIN_POSI];
+		if (index > freq_rang[LIT_MAX_POSI])
+			index = freq_rang[LIT_MAX_POSI];
+	} else if (policy->cpu < (LIT_CPU_NUM + MID_CPU_NUM)) {
+		if (index < freq_rang[MID_MIN_POSI])
+			index = freq_rang[MID_MIN_POSI];
+		if (index > freq_rang[MID_MAX_POSI])
+			index = freq_rang[MID_MAX_POSI];
+	} else {
+		if (index < freq_rang[BIG_MIN_POSI])
+			index = freq_rang[BIG_MIN_POSI];
+		if (index > freq_rang[BIG_MAX_POSI])
+			index = freq_rang[BIG_MAX_POSI];
+	}
+	return index;
+}
+#endif
 
 static int
 qcom_cpufreq_hw_target_index(struct cpufreq_policy *policy,
 			     unsigned int index)
 {
 	struct cpufreq_qcom *c = qcom_freq_domain_map[policy->cpu];
-	unsigned long freq = policy->freq_table[index].frequency;
+	unsigned long freq;
 	int i;
+
+#if defined(CONFIG_HW_MNTN_FACOTORY) && defined(CONFIG_HW_NVE)
+	index = cpufreq_index_modify(policy, index);
+#endif
+	freq = policy->freq_table[index].frequency;
 
 	if (perf_lock_support) {
 		if (c->pdmem_base)
@@ -254,10 +396,12 @@ qcom_cpufreq_hw_target_index(struct cpufreq_policy *policy,
 	writel_relaxed(index, policy->driver_data + offsets[REG_PERF_STATE]);
 	arch_set_freq_scale(policy->related_cpus, freq,
 			    policy->cpuinfo.max_freq);
+#ifdef CONFIG_HUAWEI_BB
+	rdr_cpufreq_trace(policy, index);
+#endif
 
 	for (i = 0; i < c->sdpm_base_count && freq < policy->cur; i++)
 		writel_relaxed(freq / 1000, c->sdpm_base[i]);
-
 	return 0;
 }
 
@@ -350,6 +494,12 @@ static int qcom_cpufreq_hw_cpu_init(struct cpufreq_policy *policy)
 		c->freq_limit_attr.attr.mode = 0444;
 		c->dcvsh_freq_limit = U32_MAX;
 		device_create_file(cpu_dev, &c->freq_limit_attr);
+
+		c->hard_freq_attr.attr.name = "hard_freq";
+		c->hard_freq_attr.show = hard_freq_limit_show;
+		c->hard_freq_attr.attr.mode = 0444;
+		c->hard_freq = U32_MAX;
+		device_create_file(cpu_dev, &c->hard_freq_attr);
 	}
 
 	return 0;
@@ -374,6 +524,9 @@ static void qcom_cpufreq_ready(struct cpufreq_policy *policy)
 	if (WARN_ON(!np))
 		return;
 
+#ifdef CONFIG_DRG
+	drg_cpufreq_register(policy);
+#endif
 	/*
 	 * For now, just loading the cooling device;
 	 * thermal DT code takes care of matching them.
@@ -430,6 +583,83 @@ static struct cpufreq_driver cpufreq_qcom_hw_driver = {
 	.resume		= qcom_cpufreq_hw_resume,
 };
 
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+struct freq_current_map {
+	unsigned int freq;
+	unsigned int cur_uamp;
+};
+
+static void cpufreq_current_init(struct cpufreq_qcom *c)
+{
+	struct freq_current_map *tbl = NULL;
+	struct device_node *current_np = NULL;
+	int cpu = cpumask_first(&c->related_cpus);
+	struct device_node *cpu_np = of_get_cpu_node(cpu, NULL);
+	int nr, i, j, freq_cnt;
+	const struct property *prop = NULL;
+	const __be32 *val;
+
+	if (!cpu_np) {
+		pr_err("%s: failed to get CPU%d node\n",
+			__func__, cpu);
+		return;
+	}
+
+	current_np = of_parse_phandle(cpu_np, "freq-current", 0);
+	if (!current_np) {
+		pr_err("%s: failed to get freq-current%d node\n",
+			__func__, cpu);
+		return;
+	}
+
+	prop = of_find_property(current_np, "table", NULL);
+	if (!prop) {
+		pr_err("%s: failed to get CPU%d freq-current table\n",
+			__func__, cpu);
+		return;
+	}
+	if (!prop->value)
+		return;
+
+	nr = prop->length / sizeof(u32);
+	if (nr % 2) {
+		pr_err("%s: invalid freq-current table\n", __func__);
+		return;
+	}
+
+	freq_cnt = nr / 2;
+	if (freq_cnt != lut_max_entries)
+		pr_err("%s: mismatch freq count %d != %d\n", __func__, freq_cnt, lut_max_entries);
+
+	tbl = kzalloc(sizeof(struct freq_current_map) * freq_cnt, GFP_KERNEL);
+	if (!tbl) {
+		pr_err("%s: failed to alloc table\n", __func__);
+		return;
+	}
+
+	val = prop->value;
+	for (i = 0; i < freq_cnt; i++) {
+		unsigned int freq = be32_to_cpup(val++);
+		unsigned int cur_uamp = be32_to_cpup(val++);
+
+		tbl[i].freq = freq;
+		tbl[i].cur_uamp = cur_uamp;
+	}
+
+	for (i = 0; i < lut_max_entries; i++) {
+		unsigned int freq = c->table[i].frequency;
+
+		for (j = 0; j < (freq_cnt - 1); j++) {
+			if (tbl[j].freq >= freq)
+				break;
+		}
+		c->table[i].electric_current = tbl[j].cur_uamp;
+	}
+
+	kfree(tbl);
+}
+#endif
+
 static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 				    struct cpufreq_qcom *c, u32 max_cores)
 {
@@ -463,6 +693,11 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 		else
 			freq = cpu_hw_rate / 1000;
 
+		if (freq < MIN_VALID_FREQUENCY) {
+			c->table[i].frequency = CPUFREQ_ENTRY_INVALID;
+			continue;
+		}
+
 		c->table[i].frequency = freq;
 		dev_dbg(dev, "index=%d freq=%d, core_count %d\n",
 				i, c->table[i].frequency, core_count);
@@ -488,6 +723,10 @@ static int qcom_cpufreq_hw_read_lut(struct platform_device *pdev,
 
 	if (cpu_dev)
 		dev_pm_opp_set_sharing_cpus(cpu_dev, &c->related_cpus);
+
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+	cpufreq_current_init(c);
+#endif
 
 	return 0;
 }
@@ -728,6 +967,7 @@ static int qcom_cpufreq_hw_driver_remove(struct platform_device *pdev)
 		if (c->dcvsh_irq > 0 && c->is_irq_requested) {
 			devm_free_irq(cpu_dev, c->dcvsh_irq, c);
 			device_remove_file(cpu_dev, &c->freq_limit_attr);
+			device_remove_file(cpu_dev, &c->hard_freq_attr);
 			c->is_irq_requested = false;
 		}
 	}

@@ -877,6 +877,7 @@ static int usb_audio_probe(struct usb_interface *intf,
 			snd_card_free(chip->card);
 	}
 	mutex_unlock(&register_mutex);
+	put_low_power_usb_headphone();
 	return err;
 }
 
@@ -946,6 +947,7 @@ static void usb_audio_disconnect(struct usb_interface *intf)
 	} else {
 		mutex_unlock(&register_mutex);
 	}
+	put_low_power_usb_headphone();
 }
 
 /* lock the shutdown (disconnect) task and autoresume */

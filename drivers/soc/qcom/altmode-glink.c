@@ -537,8 +537,8 @@ static int altmode_callback(void *priv, void *data, size_t len)
 	struct altmode_client *amclient;
 	u8 port_index;
 
-	altmode_dbg("len: %zu owner: %u type: %u opcode %04x\n", len, hdr->owner,
-			hdr->type, hdr->opcode);
+	pr_info("%s len: %zu owner: %u type: %u opcode %04x\n", __func__,
+		len, hdr->owner, hdr->type, hdr->opcode);
 
 	/*
 	 * For DisplayPort alt mode, the hdr->opcode is designed as follows:

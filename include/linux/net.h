@@ -121,7 +121,10 @@ struct socket {
 	struct file		*file;
 	struct sock		*sk;
 	const struct proto_ops	*ops;
-
+#if defined(CONFIG_HUAWEI_KSTATE)
+	pid_t		pid;
+	pid_t		tpid;
+#endif
 	struct socket_wq	wq;
 };
 

@@ -23,4 +23,14 @@ menuconfig INTERCONNECT_TEST
 
 source "drivers/interconnect/qcom/Kconfig"
 
+menuconfig CX_POWER_OPTIMIZE
+	tristate "Optimize cx domain power"
+	depends on PROC_FS
+	help
+	  Expose the interconnect API to userspace for testing purposes. This
+	  will create /proc/enable_bw_optimize to allow requesting
+	  bandwidth between endpoints.
+
+	  If unsure, say no.
+
 endif

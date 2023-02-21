@@ -1,0 +1,3 @@
+#include "../../common/common.dtsi"
+#include "huawei_charger.dtsi"
+#include "huawei_bt.dtsi"

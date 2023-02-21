@@ -16,6 +16,10 @@
 #include <linux/memblock.h>
 #include <linux/completion.h>
 
+#ifdef CONFIG_HUAWEI_DSM
+#include <hw_wlan/hw_wlan.h>
+#endif
+
 #include "main.h"
 #include "bus.h"
 #include "debug.h"
@@ -1749,13 +1753,13 @@ retry:
 		} else {
 			ret = mhi_pm_suspend(pci_priv->mhi_ctrl);
 		}
-		/* in some corner case, when cnss try to suspend,
-		 * there is still packets pending in mhi layer,
-		 * so retry suspend to save roll back effort.
-		 */
+			/* in some corner case, when cnss try to suspend,
+			 * there is still packets pending in mhi layer,
+			 * so retry suspend to save roll back effort.
+			 */
 		if (ret == -EBUSY && retry++ < MHI_SUSPEND_RETRY_CNT) {
-			usleep_range(5000, 6000);
-			cnss_pr_err("mhi is busy, retry #%u", retry);
+				usleep_range(5000, 6000);
+				cnss_pr_err("mhi is busy, retry #%u", retry);
 			goto retry;
 		}
 		mutex_unlock(&pci_priv->mhi_ctrl->pm_mutex);
@@ -1885,7 +1889,7 @@ int cnss_pci_start_mhi(struct cnss_pci_data *pci_priv)
 		  jiffies + msecs_to_jiffies(BOOT_DEBUG_TIMEOUT_MS));
 
 	ret = cnss_pci_set_mhi_state(pci_priv, CNSS_MHI_POWER_ON);
-	del_timer(&pci_priv->boot_debug_timer);
+	del_timer_sync(&pci_priv->boot_debug_timer);
 	if (ret == 0)
 		cnss_wlan_adsp_pc_enable(pci_priv, false);
 
@@ -2575,6 +2579,9 @@ retry:
 		if (!test_bit(CNSS_DEV_ERR_NOTIFY, &plat_priv->driver_state) &&
 		    !pci_priv->pci_link_down_ind && timeout) {
 			/* Start recovery directly for MHI start failures */
+#ifdef CONFIG_HUAWEI_DSM
+			hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "failed to start MHI, err = %d", ret);
+#endif
 			cnss_schedule_recovery(&pci_priv->pci_dev->dev,
 					       CNSS_REASON_DEFAULT);
 		}
@@ -3113,7 +3120,7 @@ static int cnss_reg_pci_event(struct cnss_pci_data *pci_priv)
 	pci_event = &pci_priv->msm_pci_event;
 	pci_event->events = MSM_PCIE_EVENT_LINK_RECOVER |
 			    MSM_PCIE_EVENT_LINKDOWN |
-			    MSM_PCIE_EVENT_WAKEUP;
+		MSM_PCIE_EVENT_WAKEUP;
 
 	if (cnss_pci_is_drv_supported(pci_priv))
 		pci_event->events = pci_event->events |
@@ -4112,7 +4119,9 @@ void cnss_pci_fw_boot_timeout_hdlr(struct cnss_pci_data *pci_priv)
 		cnss_pr_dbg("Ignore FW ready timeout for calibration mode\n");
 		return;
 	}
-
+#ifdef CONFIG_HUAWEI_DSM
+	hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "failed to ignore FW, err = %d", CNSS_REASON_TIMEOUT);
+#endif
 	cnss_schedule_recovery(&pci_priv->pci_dev->dev,
 			       CNSS_REASON_TIMEOUT);
 }
@@ -4807,7 +4816,7 @@ int cnss_pci_force_fw_assert_hdlr(struct cnss_pci_data *pci_priv)
 	cnss_auto_resume(&pci_priv->pci_dev->dev);
 
 	if (!cnss_pci_check_link_status(pci_priv))
-		mhi_debug_reg_dump(pci_priv->mhi_ctrl);
+	mhi_debug_reg_dump(pci_priv->mhi_ctrl);
 
 	cnss_pci_dump_misc_reg(pci_priv);
 	cnss_pci_dump_shadow_reg(pci_priv);
@@ -4828,6 +4837,9 @@ int cnss_pci_force_fw_assert_hdlr(struct cnss_pci_data *pci_priv)
 		}
 		cnss_fatal_err("Failed to trigger RDDM, err = %d\n", ret);
 		cnss_pci_dump_debug_reg(pci_priv);
+#ifdef CONFIG_HUAWEI_DSM
+		hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "Failed to trigger RDDM, err = %d", ret);
+#endif
 		cnss_schedule_recovery(&pci_priv->pci_dev->dev,
 				       CNSS_REASON_DEFAULT);
 		return ret;
@@ -5272,6 +5284,9 @@ static void cnss_dev_rddm_timeout_hdlr(struct timer_list *t)
 
 	mhi_debug_reg_dump(pci_priv->mhi_ctrl);
 
+#ifdef CONFIG_HUAWEI_DSM
+	hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "cnss_dev_rddm_timeout_hdlr: err = %d", CNSS_REASON_TIMEOUT);
+#endif
 	cnss_schedule_recovery(&pci_priv->pci_dev->dev, CNSS_REASON_TIMEOUT);
 }
 
@@ -5370,6 +5385,9 @@ static void cnss_mhi_notify_status(struct mhi_controller *mhi_ctrl, void *priv,
 		return;
 	}
 
+#ifdef CONFIG_HUAWEI_DSM
+	hw_wlan_dsm_client_notify(DSM_PCIE_LINKFAIL_ERROR, "cnss_mhi_notify_status:recovery for reason = %d", cnss_reason);
+#endif
 	cnss_schedule_recovery(&pci_priv->pci_dev->dev, cnss_reason);
 }
 
@@ -5628,7 +5646,7 @@ static irqreturn_t cnss_pci_wake_handler(int irq, void *data)
 	 * calling pm_system_wakeup() is just to guarantee system suspend
 	 * can be aborted if it is not initiated in any case.
 	 */
-	pm_system_wakeup();
+	pm_system_irq_wakeup(irq);
 
 	if (cnss_pci_get_monitor_wake_intr(pci_priv) &&
 	    cnss_pci_get_auto_suspended(pci_priv)) {

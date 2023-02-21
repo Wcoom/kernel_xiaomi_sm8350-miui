@@ -141,6 +141,11 @@ struct cdc_ncm_ctx {
 	u64 tx_ntbs;
 	u64 rx_overhead;
 	u64 rx_ntbs;
+#ifdef CONFIG_USB_EXTRA_MODEM
+	int dev_val;
+	struct work_struct devent;
+	struct usbnet *usbnet_dev;
+#endif
 };
 
 u8 cdc_ncm_select_altsetting(struct usb_interface *intf);

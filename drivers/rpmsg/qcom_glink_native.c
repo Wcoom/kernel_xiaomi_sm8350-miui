@@ -1262,7 +1262,7 @@ static irqreturn_t qcom_glink_native_intr(int irq, void *data)
 	if (should_wake) {
 		pr_info("%s: %d triggered %s\n", __func__, irq, glink->irqname);
 		glink_resume_pkt = true;
-		pm_system_wakeup();
+		pm_system_irq_wakeup(irq);
 	}
 	/* To wakeup any blocking writers */
 	wake_up_all(&glink->tx_avail_notify);

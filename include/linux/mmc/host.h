@@ -578,7 +578,9 @@ struct mmc_host {
 
 	int			dsr_req;	/* DSR value is valid */
 	u32			dsr;	/* optional driver stage (DSR) value */
-
+#ifdef CONFIG_HUAWEI_DSM_IOMT_EMMC_HOST
+        void *iomt_host_info;
+#endif
 	/* Command Queue Engine (CQE) support */
 	const struct mmc_cqe_ops *cqe_ops;
 	void			*cqe_private;
@@ -590,6 +592,19 @@ struct mmc_host {
 	void *crypto_DO_NOT_USE[7];
 #endif /* CONFIG_MMC_CRYPTO */
 
+        /* discriminate whether is sdcard or not  */
+        int is_sd_card;
+#ifdef CONFIG_SDSIM_MUX
+	int sd_sim_mux;
+	int sd_sim_gpio_switch;
+	int sd_card_inserted;
+	int sd_cmd_det_result;
+	int sim_dat_gpio; /* gpio133 */
+	int sim_clk_gpio; /* gpio134 */
+	int sim_rst_gpio; /* gpio135 */
+	int sd_sim_boost_5v;
+	struct wakeup_source *detect_wake_lock;
+#endif
 	/* Host Software Queue support */
 	bool			hsq_enabled;
 #if defined(CONFIG_SDC_QTI)

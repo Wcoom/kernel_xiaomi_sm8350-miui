@@ -758,7 +758,7 @@ static int kgsl_iommu_fault_handler(struct iommu_domain *domain,
 
 		/* This is used by reset/recovery path */
 		ctx->stalled_on_fault = true;
-
+		report_gpu_dmd_inirq(ADRENO_IOMMU_PAGE_FAULT, "kgsl_iommu_fault_handler2");
 		adreno_set_gpu_fault(adreno_dev, ADRENO_IOMMU_PAGE_FAULT);
 		/* Go ahead with recovery*/
 		adreno_dispatcher_schedule(device);
@@ -2525,8 +2525,8 @@ int kgsl_iommu_probe(struct kgsl_device *device)
 	kgsl_iommu_map_globals(mmu, mmu->lpac_pagetable);
 	/* QDSS is supported only when QCOM_KGSL_QDSS_STM is enabled */
 	if (IS_ENABLED(CONFIG_QCOM_KGSL_QDSS_STM))
-		device->qdss_desc = kgsl_allocate_global_fixed(device,
-					"qcom,gpu-qdss-stm", "gpu-qdss");
+	device->qdss_desc = kgsl_allocate_global_fixed(device,
+		"qcom,gpu-qdss-stm", "gpu-qdss");
 
 	device->qtimer_desc = kgsl_allocate_global_fixed(device,
 		"qcom,gpu-timer", "gpu-qtimer");

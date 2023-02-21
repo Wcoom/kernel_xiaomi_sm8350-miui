@@ -34,6 +34,7 @@
 #include "../pinctrl-utils.h"
 
 #define MAX_NR_GPIO 300
+#define TP_IRQ_GPIO 81
 #define MAX_NR_TILES 4
 #define PS_HOLD_OFFSET 0x820
 #define QUP_MASK       GENMASK(5, 0)
@@ -80,6 +81,7 @@ struct msm_pinctrl {
 };
 
 static struct msm_pinctrl *msm_pinctrl_data;
+static bool skipwake_flag;
 
 #define MSM_ACCESSOR(name) \
 static u32 msm_readl_##name(struct msm_pinctrl *pctrl, \
@@ -1561,6 +1563,8 @@ int msm_gpio_mpm_wake_set(unsigned int gpio, bool enable)
 	unsigned long flags;
 	u32 val;
 
+	if (gpio == TP_IRQ_GPIO && skipwake_flag)
+		return 0;
 	g = &msm_pinctrl_data->soc->groups[gpio];
 	if (g->wake_bit == -1)
 		return -ENOENT;
@@ -1612,6 +1616,8 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 			return PTR_ERR(pctrl->regs[0]);
 	}
 
+	skipwake_flag = of_property_read_bool(pdev->dev.of_node,
+			"tp-irq-skip-wake-set");
 	pctrl->mpm_wake_ctl = of_property_read_bool(pdev->dev.of_node,
 					"qcom,tlmm-mpm-wake-control");
 

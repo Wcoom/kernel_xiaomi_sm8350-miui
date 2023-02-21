@@ -1,0 +1,23 @@
+&soc {
+	qcom,sde_rscc@af20000 {
+		status = "disabled";
+	};
+};
+
+&mdss_mdp {
+	connectors = <&smmu_sde_unsec &smmu_sde_sec &sde_dp &sde_wb &sde_dsi
+		&sde_dsi1>;
+	vdd-supply = <&disp_cc_mdss_core_gdsc>;
+	qcom,platform-supply-entries {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		qcom,platform-supply-entry@1 {
+			reg = <0>;
+			qcom,supply-name = "vdd";
+			qcom,supply-min-voltage = <0>;
+			qcom,supply-max-voltage = <0>;
+			qcom,supply-enable-load = <0>;
+			qcom,supply-disable-load = <0>;
+		};
+	};
+};

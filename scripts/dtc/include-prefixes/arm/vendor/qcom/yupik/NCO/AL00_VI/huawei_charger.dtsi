@@ -1,0 +1,48 @@
+&pm7325_gpios {
+	pm7325_bat_id {
+		bat_id_default: bat_id_default {
+		pins = "gpio5";
+		bias-high-impedance;
+		};
+	};
+
+	pm7325_pogo_id {
+		pogo_id_default: pogo_id_default {
+			pins = "gpio4";
+			bias-disable;
+		};
+	};
+};
+
+&pmk8350_vadc {
+	pinctrl-names = "default";
+	pinctrl-0 = < &bat_id_default &pogo_id_default>;
+	qcom,customize-channel = <1>;
+	pm7325_bat_id {
+		reg = < PM7325_ADC7_GPIO4_100K_PU>;
+		label = "batt-id";
+		qcom,ratiometric;
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+
+	pm7325_pogo_id {
+		reg = <PM7325_ADC7_GPIO3>;
+		label = "pogo-id";
+		qcom,hw-settle-time = <200>;
+		qcom,pre-scaling = <1 1>;
+	};
+};
+
+&battery_model {
+        bat_id_table =
+		"BITCAE_3900_4450_v0", "1457000", "1509000", "IA",
+		"BCYCAE_3900_4450_v0", "1457000", "1509000", "CA";
+	design_fcc = <3900>;
+        support_iio = <1>;
+        io-channels = <&pmk8350_vadc PM7325_ADC7_GPIO4_100K_PU>;
+        io-channel-names = "batt-id";
+        id_adc_channel = <0>; /* useless but necessary for Qcom, set 0 as default */
+        status = "ok";
+};
+

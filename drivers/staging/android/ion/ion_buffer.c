@@ -10,6 +10,11 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/dma-noncoherent.h>
+#include <linux/ion.h>
+
+#ifdef CONFIG_SCHED_INFO
+#include <linux/sched/cputime.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include "ion_trace.h"
@@ -135,10 +140,17 @@ struct ion_buffer *ion_buffer_alloc(struct ion_device *dev, size_t len,
 	struct ion_buffer *buffer = NULL;
 	struct ion_heap *heap;
 	char task_comm[TASK_COMM_LEN];
+#ifdef CONFIG_SCHED_INFO
+	unsigned long long time;
+	unsigned long long run_time;
+	unsigned long long run_delay;
 
-	if (!dev || !len) {
+	time = ktime_get();
+	run_time = task_sched_runtime(current);
+	run_delay = current->sched_info.run_delay;
+#endif
+	if (!dev || !len)
 		return ERR_PTR(-EINVAL);
-	}
 
 	if (heap_id_mask & ION_HEAP_SYSTEM) {
 		get_task_comm(task_comm, current->group_leader);
@@ -166,6 +178,16 @@ struct ion_buffer *ion_buffer_alloc(struct ion_device *dev, size_t len,
 			break;
 	}
 	up_read(&dev->lock);
+
+#ifdef CONFIG_SCHED_INFO
+	time = ktime_us_delta(ktime_get(), time);
+	run_time = ktime_us_delta(task_sched_runtime(current), run_time);
+	run_delay = ktime_us_delta(current->sched_info.run_delay, run_delay);
+	if (time > 100000) /* 100000 : means 100ms */
+		pr_err("%s: alloc_size:%zu, PID:%d, process_name:%s, time_cost:%lld,"
+			"sched_run_time:%llu, sched_run_delay:%llu\n", __func__,
+			len, current->pid, current->comm, time, run_time, run_delay);
+#endif
 
 	if (!buffer)
 		return ERR_PTR(-ENODEV);
@@ -256,6 +278,9 @@ void *ion_buffer_kmap_get(struct ion_buffer *buffer)
 	void *vaddr;
 
 	if (buffer->kmap_cnt) {
+		if (buffer->kmap_cnt == INT_MAX)
+			return ERR_PTR(-EOVERFLOW);
+
 		buffer->kmap_cnt++;
 		return buffer->vaddr;
 	}

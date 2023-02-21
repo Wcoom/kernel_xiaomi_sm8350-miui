@@ -185,6 +185,8 @@ typedef int (dio_iodone_t)(struct kiocb *iocb, loff_t offset,
  */
 #define CHECK_IOVEC_ONLY -1
 
+#define WRITE_FLUSH_FUA		(REQ_SYNC | REQ_NOIDLE | REQ_PREFLUSH | REQ_FUA)
+
 /*
  * Attribute flags.  These should be or-ed together to figure out what
  * has been changed!
@@ -308,14 +310,17 @@ enum rw_hint {
 	WRITE_LIFE_EXTREME	= RWH_WRITE_LIFE_EXTREME,
 };
 
-#define IOCB_EVENTFD		(1 << 0)
-#define IOCB_APPEND		(1 << 1)
-#define IOCB_DIRECT		(1 << 2)
-#define IOCB_HIPRI		(1 << 3)
-#define IOCB_DSYNC		(1 << 4)
-#define IOCB_SYNC		(1 << 5)
-#define IOCB_WRITE		(1 << 6)
-#define IOCB_NOWAIT		(1 << 7)
+/* Match RWF_* bits to IOCB bits */
+#define IOCB_HIPRI		(__force int) RWF_HIPRI
+#define IOCB_DSYNC		(__force int) RWF_DSYNC
+#define IOCB_SYNC		(__force int) RWF_SYNC
+#define IOCB_NOWAIT		(__force int) RWF_NOWAIT
+#define IOCB_APPEND		(__force int) RWF_APPEND
+
+/* non-RWF related bits - start at 16 */
+#define IOCB_EVENTFD		(1 << 16)
+#define IOCB_DIRECT		(1 << 17)
+#define IOCB_WRITE		(1 << 18)
 
 struct kiocb {
 	struct file		*ki_filp;
@@ -693,7 +698,9 @@ struct inode {
 	/* Misc */
 	unsigned long		i_state;
 	struct rw_semaphore	i_rwsem;
-
+#ifdef CONFIG_SDP_ENCRYPTION
+	struct rw_semaphore     i_sdp_sem; /* protect sdp */
+#endif
 	unsigned long		dirtied_when;	/* jiffies of first dirtying */
 	unsigned long		dirtied_time_when;
 
@@ -753,6 +760,9 @@ struct inode {
 #endif
 
 	void			*i_private; /* fs or device private pointer */
+#if defined(CONFIG_TASK_PROTECT_LRU) || defined(CONFIG_MEMCG_PROTECT_LRU)
+	int			i_protect;
+#endif
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
@@ -940,6 +950,9 @@ struct file_ra_state {
 					   there are only # of pages ahead */
 
 	unsigned int ra_pages;		/* Maximum readahead window */
+#ifdef CONFIG_MAS_BUFFERED_READAHEAD
+	unsigned int ra_pages_cr;
+#endif
 	unsigned int mmap_miss;		/* Cache miss stat for mmap accesses */
 	loff_t prev_pos;		/* Cache last read() position */
 };
@@ -991,6 +1004,10 @@ struct file {
 #endif /* #ifdef CONFIG_EPOLL */
 	struct address_space	*f_mapping;
 	errseq_t		f_wb_err;
+
+#ifdef CONFIG_HMFS_FS
+	unsigned char hm_fsync_flag;
+#endif
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_VENDOR_DATA(1);
@@ -1440,6 +1457,7 @@ extern int send_sigurg(struct fown_struct *fown);
 
 /* sb->s_iflags to limit user namespace mounts */
 #define SB_I_USERNS_VISIBLE		0x00000010 /* fstype already mounted */
+#define SB_I_PERSB_BDI	0x00000200	/* has a per-sb bdi */
 #define SB_I_IMA_UNVERIFIABLE_SIGNATURE	0x00000020
 #define SB_I_UNTRUSTED_MOUNTER		0x00000040
 
@@ -1592,7 +1610,6 @@ struct super_block {
 
 	spinlock_t		s_inode_wblist_lock;
 	struct list_head	s_inodes_wb;	/* writeback inodes */
-
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
 	ANDROID_KABI_RESERVE(3);
@@ -2035,6 +2052,9 @@ struct super_operations {
 				  struct shrink_control *);
 	long (*free_cached_objects)(struct super_block *,
 				    struct shrink_control *);
+#ifdef CONFIG_F2FS_JOURNAL_APPEND
+	void (*flush_mbio)(struct super_block *sb );
+#endif
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
@@ -2066,6 +2086,10 @@ struct super_operations {
 #define S_ENCRYPTED	16384	/* Encrypted file (using fs/crypto/) */
 #define S_CASEFOLD	32768	/* Casefolded file */
 #define S_VERITY	65536	/* Verity file (using fs/verity/) */
+
+#ifdef CONFIG_FCMA
+#define S_ONEREAD	(1U << 30)
+#endif
 
 /*
  * Note that nosuid etc flags are inode-specific: setting some file-system
@@ -3165,6 +3189,38 @@ extern void inode_sb_list_add(struct inode *inode);
 #ifdef CONFIG_BLOCK
 extern int bdev_read_only(struct block_device *);
 #endif
+
+#ifdef CONFIG_BLK_CGROUP_IOSMART
+#define THROTL_WB_SYNC_PAGE_CNT	128
+#define THROTL_WB_SYNC_BIO_CNT	8
+extern bool blk_throtl_get_quota(struct block_device *,
+				 unsigned int, unsigned long, bool);
+static inline void blk_throtl_get_quotas(struct block_device *bdev,
+					 unsigned int size,
+					 unsigned long jiffies_time_out,
+					 bool wait,
+					 unsigned int cnt)
+{
+	while (cnt--)
+		blk_throtl_get_quota(bdev, PAGE_SIZE, jiffies_time_out, wait);
+}
+#else
+static inline bool blk_throtl_get_quota(struct block_device *bdev,
+					unsigned int size,
+					unsigned long jiffies_time_out,
+					bool wait)
+{
+	return true;
+}
+static inline void blk_throtl_get_quotas(struct block_device *bdev,
+					 unsigned int size,
+					 unsigned long jiffies_time_out,
+					 bool wait,
+					 unsigned int cnt)
+{
+}
+#endif
+
 extern int set_blocksize(struct block_device *, int);
 extern int sb_set_blocksize(struct super_block *, int);
 extern int sb_min_blocksize(struct super_block *, int);
@@ -3493,23 +3549,30 @@ static inline int iocb_flags(struct file *file)
 
 static inline int kiocb_set_rw_flags(struct kiocb *ki, rwf_t flags)
 {
+	int kiocb_flags = 0;
+
+	/* make sure there's no overlap between RWF and private IOCB flags */
+	BUILD_BUG_ON((__force int) RWF_SUPPORTED & IOCB_EVENTFD);
+
+	if (!flags)
+		return 0;
 	if (unlikely(flags & ~RWF_SUPPORTED))
 		return -EOPNOTSUPP;
 
-	if (flags & RWF_NOWAIT) {
+	if (flags & RWF_NOWAIT)
 		if (!(ki->ki_filp->f_mode & FMODE_NOWAIT))
 			return -EOPNOTSUPP;
-		ki->ki_flags |= IOCB_NOWAIT;
-	}
-	if (flags & RWF_HIPRI)
-		ki->ki_flags |= IOCB_HIPRI;
-	if (flags & RWF_DSYNC)
-		ki->ki_flags |= IOCB_DSYNC;
+	kiocb_flags |= (__force int) (flags & RWF_SUPPORTED);
 	if (flags & RWF_SYNC)
-		ki->ki_flags |= (IOCB_DSYNC | IOCB_SYNC);
-	if (flags & RWF_APPEND)
-		ki->ki_flags |= IOCB_APPEND;
+		kiocb_flags |= IOCB_DSYNC;
+
+	ki->ki_flags |= kiocb_flags;
 	return 0;
+}
+
+static inline rwf_t iocb_to_rw_flags(int ifl, int iocb_mask)
+{
+	return ifl & iocb_mask;
 }
 
 static inline ino_t parent_ino(struct dentry *dentry)
@@ -3706,6 +3769,12 @@ static inline void simple_fill_fsxattr(struct fsxattr *fa, __u32 xflags)
 	memset(fa, 0, sizeof(*fa));
 	fa->fsx_xflags = xflags;
 }
+
+#if defined(CONFIG_OVERLAY_FS) && (defined(CONFIG_TASK_PROTECT_LRU) || \
+	defined(CONFIG_MEMCG_PROTECT_LRU) || \
+	defined(CONFIG_HW_CGROUP_WORKINGSET))
+struct file *get_real_file(struct file *filp);
+#endif
 
 /*
  * Flush file data before changing attributes.  Caller must hold any locks

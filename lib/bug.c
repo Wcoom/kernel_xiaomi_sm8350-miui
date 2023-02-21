@@ -47,6 +47,8 @@
 #include <linux/bug.h>
 #include <linux/sched.h>
 #include <linux/rculist.h>
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
 
 extern struct bug_entry __start___bug_table[], __stop___bug_table[];
 
@@ -145,6 +147,8 @@ enum bug_trap_type report_bug(unsigned long bugaddr, struct pt_regs *regs)
 	struct bug_entry *bug;
 	const char *file;
 	unsigned line, warning, once, done;
+	int err;
+	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
 
 	if (!is_valid_bugaddr(bugaddr))
 		return BUG_TRAP_TYPE_NONE;
@@ -197,11 +201,21 @@ enum bug_trap_type report_bug(unsigned long bugaddr, struct pt_regs *regs)
 		return BUG_TRAP_TYPE_WARN;
 	}
 
-	if (file)
+	if (file) {
 		pr_crit("kernel BUG at %s:%u!\n", file, line);
-	else
-		pr_crit("Kernel BUG at %pB [verbose debug info unavailable]\n",
-			(void *)bugaddr);
+
+		trace_rb_sreason_set("bug");
+		err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "BUG at %s:%u!", file,
+			       line);
+	} else {
+		pr_crit("Kernel BUG at %pB [verbose debug info unavailable]\n", (void *)bugaddr);
+
+		trace_rb_sreason_set("bug_unavail");
+		err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "BUG unavailable at %p!",
+			      (void *)bugaddr);
+	}
+	if (err >= 0)
+		trace_rb_attach_info_set(attach_info_buffer);
 
 	return BUG_TRAP_TYPE_BUG;
 }

@@ -1,0 +1,86 @@
+&pm8350b_gpios {
+        pm8350b_gpio7 {
+                pm8350b_gpio7_default: pm8350b_gpio7_default {
+                        pins = "gpio7";
+                        function = "normal";
+			power-source = <0>;
+			output-low;
+			input-disable;
+                };
+        };
+};
+
+&hi110x {
+	compatible = "hisilicon,hi110x","hisilicon,hi1102";
+	status = "ok";
+	hi110x,chip_type = "hisi";
+	hi110x,subchip_type = "hi1102a";
+        pinctrl-names = "default";
+        pinctrl-0 = <&pm8350b_gpio7_default>;
+	hi110x,gpio_power_on = <&pm8350b_gpios 7 GPIO_ACTIVE_LOW>;                /*GPIO_7*/
+	hi110x,gpio_bfgx_power_on = <&extgpio 9 0>;            /*P11*/
+	hi110x,gpio_wlan_power_on = <&extgpio 12 0>;            /*P14*/
+	huawei,pmu_clk32b = "sleep_clk";
+	hi110x,asic_version;
+	clocks = <&sleep_clk 1>;
+	clock-names = "sleep_clk";
+};
+
+&hisi_wifi {
+	compatible = "hisilicon,hisi_wifi";
+	status = "ok";
+	hi110x,gpio_wlan_wakeup_host =  <&tlmm 40 0>;       /*GPIO_40*/
+	hi110x,gpio_host_wakeup_wlan =  <&extgpio 10 0>;       /*P_12*/
+};
+
+&hisi_bfgx {
+	compatible = "hisilicon,hisi_bfgx";
+	status = "ok";
+	hi110x,gpio_bfgx_wakeup_host = <&tlmm 85 0>;        /*GPIO_85*/
+	hi110x,gpio_timesync = <&tlmm 117 0>;        /*GPIO_117*/
+	hi110x,uart_port = "/dev/ttyHS3";
+	hi110x,uart_pclk_normal;
+};
+
+&hisi_cust_cfg {
+	compatible = "hi110x,customize";
+	status = "ok";
+	ini_file_name = "/vendor/etc/cfg_draco_1102a_pilot.ini";
+};
+
+&hisi_gps {
+	/* conndevcheck mode. 1: open, 0: default */
+	fac_dbc_conntest_mode = "1";
+};
+
+&sdhc_1 {
+	vdd-io-supply = <&pm8350_s10>;
+	qcom,vdd-io-voltage-level = <1800000 1800000>;
+	qcom,vdd-io-always-on;
+	qcom,vdd-io-current-level = <0 10000>;
+
+	keep-power-in-suspend;
+	qcom,core_3_0v_support;
+	non-removable;
+
+	pinctrl-names = "default", "sleep";
+	pinctrl-0 = <&sdc1_on>;
+	pinctrl-1 = <&sdc1_off>;
+
+	#address-cells = <0>;
+	interrupt-parent = <&sdhc_1>;
+	interrupts = <0 1 2>;
+	#interrupt-cells = <1>;
+	interrupt-map-mask = <0xffffffff>;
+	interrupt-map = <0 &intc GIC_SPI 261 IRQ_TYPE_LEVEL_HIGH
+	1 &intc GIC_SPI 227 IRQ_TYPE_LEVEL_HIGH
+	2 &tlmm 228 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "hc_irq", "pwr_irq";
+
+	status = "ok";
+};
+
+&qupv3_se2_4uart{
+	qcom,auto-suspend-disable;
+	status = "ok";
+};

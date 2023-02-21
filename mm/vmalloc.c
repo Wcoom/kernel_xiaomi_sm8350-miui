@@ -33,13 +33,15 @@
 #include <linux/compiler.h>
 #include <linux/llist.h>
 #include <linux/bitops.h>
+#ifdef CONFIG_HW_PAGE_TRACKER
+#include <linux/hw/page_tracker.h>
+#endif
 #include <linux/rbtree_augmented.h>
 #include <linux/overflow.h>
 
 #include <linux/uaccess.h>
 #include <asm/tlbflush.h>
 #include <asm/shmparam.h>
-
 #include "internal.h"
 
 struct vfree_deferred {
@@ -449,6 +451,23 @@ RB_DECLARE_CALLBACKS_MAX(static, free_vmap_area_rb_augment_cb,
 static void purge_vmap_area_lazy(void);
 static BLOCKING_NOTIFIER_HEAD(vmap_notify_list);
 static unsigned long lazy_max_pages(void);
+
+#ifdef CONFIG_DFX_MEMCHECK
+void vmap_area_list_lock(void)
+{
+	spin_lock(&vmap_area_lock);
+}
+
+void vmap_area_list_unlock(void)
+{
+	spin_unlock(&vmap_area_lock);
+}
+
+struct list_head *get_vmap_area_list(void)
+{
+	return &vmap_area_list;
+}
+#endif
 
 static atomic_long_t nr_vmalloc_pages;
 
@@ -2341,6 +2360,7 @@ static void __vunmap(const void *addr, int deallocate_pages)
 
 			BUG_ON(!page);
 			__free_pages(page, 0);
+			mm_set_vmalloc_page_zone_state(page, false);
 		}
 		atomic_long_sub(area->nr_pages, &nr_vmalloc_pages);
 
@@ -2525,7 +2545,11 @@ static void *__vmalloc_area_node(struct vm_struct *area, gfp_t gfp_mask,
 			atomic_long_add(area->nr_pages, &nr_vmalloc_pages);
 			goto fail;
 		}
+		mm_set_vmalloc_page_zone_state(page, true);
 		area->pages[i] = page;
+#ifdef CONFIG_HW_PAGE_TRACKER
+		page_tracker_set_type(page, TRACK_VMALLOC, 0);
+#endif
 		if (gfpflags_allow_blocking(gfp_mask|highmem_mask))
 			cond_resched();
 	}

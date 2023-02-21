@@ -12,6 +12,44 @@
 
 #define RWBS_LEN	8
 
+TRACE_EVENT(zram_CR,
+	TP_PROTO(char const *str, unsigned int comp_len, unsigned long long proxy),
+
+	TP_ARGS(str, comp_len, proxy),
+
+	TP_STRUCT__entry(
+		__field(const char *, str);
+		__field(unsigned int, comp_len);
+		__field(unsigned long long, proxy);
+	),
+
+	TP_fast_assign(
+		__entry->str = str;
+		__entry->comp_len = comp_len;
+		__entry->proxy = proxy;
+	),
+
+	TP_printk("ZRAM_CR %s %u %llu", __entry->str, __entry->comp_len, __entry->proxy)
+);
+
+TRACE_EVENT(zram_time,
+	TP_PROTO(char const *str, unsigned long long time),
+
+	TP_ARGS(str, time),
+
+	TP_STRUCT__entry(
+		__field(const char *, str);
+		__field(unsigned long long, time);
+	),
+
+	TP_fast_assign(
+		__entry->str = str;
+		__entry->time = time;
+	),
+
+	TP_printk("ZRAM_TIME %s %llu", __entry->str, __entry->time)
+);
+
 DECLARE_EVENT_CLASS(block_buffer,
 
 	TP_PROTO(struct buffer_head *bh),
@@ -90,7 +128,11 @@ TRACE_EVENT(block_rq_requeue,
 		__entry->sector    = blk_rq_trace_sector(rq);
 		__entry->nr_sector = blk_rq_trace_nr_sectors(rq);
 
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, rq->mas_cmd_flags, blk_rq_bytes(rq));
+#else
 		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, blk_rq_bytes(rq));
+#endif
 		__get_str(cmd)[0] = '\0';
 	),
 
@@ -134,7 +176,11 @@ TRACE_EVENT(block_rq_complete,
 		__entry->nr_sector = nr_bytes >> 9;
 		__entry->error     = error;
 
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, rq->mas_cmd_flags, nr_bytes);
+#else
 		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, nr_bytes);
+#endif
 		__get_str(cmd)[0] = '\0';
 	),
 
@@ -167,9 +213,17 @@ DECLARE_EVENT_CLASS(block_rq,
 		__entry->nr_sector = blk_rq_trace_nr_sectors(rq);
 		__entry->bytes     = blk_rq_bytes(rq);
 
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, rq->mas_cmd_flags, blk_rq_bytes(rq));
+#else
 		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, blk_rq_bytes(rq));
+#endif
 		__get_str(cmd)[0] = '\0';
+#ifdef CONFIG_MAS_BLK
+		memcpy(__entry->comm, rq->mas_req.task_comm, TASK_COMM_LEN);
+#else
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
+#endif
 	),
 
 	TP_printk("%d,%d %s %u (%s) %llu + %u [%s]",
@@ -240,7 +294,11 @@ TRACE_EVENT(block_bio_bounce,
 		__entry->dev		= bio_dev(bio);
 		__entry->sector		= bio->bi_iter.bi_sector;
 		__entry->nr_sector	= bio_sectors(bio);
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 	),
 
@@ -278,7 +336,11 @@ TRACE_EVENT(block_bio_complete,
 		__entry->sector		= bio->bi_iter.bi_sector;
 		__entry->nr_sector	= bio_sectors(bio);
 		__entry->error		= error;
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 	),
 
 	TP_printk("%d,%d %s %llu + %u [%d]",
@@ -305,7 +367,11 @@ DECLARE_EVENT_CLASS(block_bio_merge,
 		__entry->dev		= bio_dev(bio);
 		__entry->sector		= bio->bi_iter.bi_sector;
 		__entry->nr_sector	= bio_sectors(bio);
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 	),
 
@@ -372,7 +438,11 @@ TRACE_EVENT(block_bio_queue,
 		__entry->dev		= bio_dev(bio);
 		__entry->sector		= bio->bi_iter.bi_sector;
 		__entry->nr_sector	= bio_sectors(bio);
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 	),
 
@@ -400,8 +470,13 @@ DECLARE_EVENT_CLASS(block_get_rq,
 		__entry->dev		= bio ? bio_dev(bio) : 0;
 		__entry->sector		= bio ? bio->bi_iter.bi_sector : 0;
 		__entry->nr_sector	= bio ? bio_sectors(bio) : 0;
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs,
+			      bio ? bio->bi_opf : 0, bio ? bio->mas_bi_opf : 0, __entry->nr_sector);
+#else
 		blk_fill_rwbs(__entry->rwbs,
 			      bio ? bio->bi_opf : 0, __entry->nr_sector);
+#endif
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
         ),
 
@@ -535,7 +610,11 @@ TRACE_EVENT(block_split,
 		__entry->dev		= bio_dev(bio);
 		__entry->sector		= bio->bi_iter.bi_sector;
 		__entry->new_sector	= new_sector;
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
 	),
 
@@ -578,7 +657,11 @@ TRACE_EVENT(block_bio_remap,
 		__entry->nr_sector	= bio_sectors(bio);
 		__entry->old_dev	= dev;
 		__entry->old_sector	= from;
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
 		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
 	),
 
 	TP_printk("%d,%d %s %llu + %u <- (%d,%d) %llu",
@@ -624,7 +707,11 @@ TRACE_EVENT(block_rq_remap,
 		__entry->old_dev	= dev;
 		__entry->old_sector	= from;
 		__entry->nr_bios	= blk_rq_count_bios(rq);
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, rq->mas_cmd_flags, blk_rq_bytes(rq));
+#else
 		blk_fill_rwbs(__entry->rwbs, rq->cmd_flags, blk_rq_bytes(rq));
+#endif
 	),
 
 	TP_printk("%d,%d %s %llu + %u <- (%d,%d) %llu %u",
@@ -634,6 +721,61 @@ TRACE_EVENT(block_rq_remap,
 		  MAJOR(__entry->old_dev), MINOR(__entry->old_dev),
 		  (unsigned long long)__entry->old_sector, __entry->nr_bios)
 );
+
+#ifdef CONFIG_MAS_IO_TRACE
+#define MAS_IO_TRACE_LEN   128
+TRACE_EVENT(hisi_io,
+
+	TP_PROTO(const char *func, const char *str_info, const unsigned int len),
+
+	TP_ARGS(func, str_info),
+
+	TP_STRUCT__entry(
+		__dynamic_array(char, info_func, strlen(func) + 1);
+		__dynamic_array(char, info_string, strlen(str_info) + 1);),
+
+	TP_fast_assign(
+		memset(__get_str(info_func), 0x00, strlen(func) + 1);
+		memcpy(__get_str(info_func), func, strlen(func));
+		memset(__get_str(info_string), 0x00, strlen(str_info) + 1);
+		memcpy(__get_str(info_string), str_info, strlen(str_info));),
+
+	TP_printk("[%s]:%s", __get_str(info_func), __get_str(info_string)));
+
+TRACE_EVENT(block_submit_bio,
+
+	TP_PROTO(struct bio *bio, int enter),
+
+	TP_ARGS(bio, enter),
+
+	TP_STRUCT__entry(
+		__field( dev_t,		dev			)
+		__field( sector_t,	sector			)
+		__field( unsigned int,	nr_sector		)
+		__array( char,		rwbs,	RWBS_LEN	)
+		__array( char,		comm,	TASK_COMM_LEN	)
+		__field( unsigned int,	is_enter		)
+	),
+
+	TP_fast_assign(
+		__entry->dev		= bio_dev(bio);
+		__entry->sector		= bio->bi_iter.bi_sector;
+		__entry->nr_sector	= bio_sectors(bio);
+#ifdef CONFIG_MAS_BLK
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->mas_bi_opf, bio->bi_iter.bi_size);
+#else
+		blk_fill_rwbs(__entry->rwbs, bio->bi_opf, bio->bi_iter.bi_size);
+#endif
+		memcpy(__entry->comm, current->comm, TASK_COMM_LEN);
+		__entry->is_enter = enter
+	),
+
+	TP_printk("%d,%d %s %llu + %u %d [%s]",
+		  MAJOR(__entry->dev), MINOR(__entry->dev), __entry->rwbs,
+		  (unsigned long long)__entry->sector,
+		  __entry->nr_sector, __entry->is_enter, __entry->comm)
+);
+#endif /* CONFIG_MAS_IO_TRACE */
 
 #endif /* _TRACE_BLOCK_H */
 

@@ -1,0 +1,2 @@
+#include "camera-sensor.dtsi"
+#include "camera-sensor-depth-reset.dtsi"

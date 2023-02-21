@@ -7,6 +7,10 @@
 
 #include <linux/clk.h>
 
+#ifdef CONFIG_GPU_FREQ_STAT
+#include <linux/msm_kgsl.h>
+#endif
+
 /*****************************************************************************
  * power flags
  ****************************************************************************/
@@ -19,7 +23,9 @@
 
 #define KGSL_MAX_CLKS 18
 
+#ifndef CONFIG_GPU_FREQ_STAT
 #define KGSL_MAX_PWRLEVELS 16
+#endif
 
 #define KGSL_PWRFLAGS_POWER_ON 0
 #define KGSL_PWRFLAGS_CLK_ON   1

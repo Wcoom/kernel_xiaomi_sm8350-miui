@@ -772,17 +772,17 @@ static struct psi_group *iterate_groups(struct task_struct *task, void **iter)
 
 #ifdef CONFIG_CGROUPS
 	if (static_branch_likely(&psi_cgroups_enabled)) {
-		struct cgroup *cgroup = NULL;
+	struct cgroup *cgroup = NULL;
 
-		if (!*iter)
-			cgroup = task->cgroups->dfl_cgrp;
-		else
-			cgroup = cgroup_parent(*iter);
+	if (!*iter)
+		cgroup = task->cgroups->dfl_cgrp;
+	else
+		cgroup = cgroup_parent(*iter);
 
-		if (cgroup && cgroup_parent(cgroup)) {
-			*iter = cgroup;
-			return cgroup_psi(cgroup);
-		}
+	if (cgroup && cgroup_parent(cgroup)) {
+		*iter = cgroup;
+		return cgroup_psi(cgroup);
+	}
 	}
 #endif
 	*iter = &psi_system;
@@ -981,6 +981,25 @@ void cgroup_move_task(struct task_struct *task, struct css_set *to)
 	task_rq_unlock(rq, task, &rf);
 }
 #endif /* CONFIG_CGROUPS */
+
+#ifdef CONFIG_HYPERHOLD
+unsigned long get_psi(struct psi_group *group, enum psi_res res)
+{
+	u64 now;
+
+	if (static_branch_likely(&psi_disabled))
+		return 0;
+
+	/* Update averages before reporting them */
+	mutex_lock(&group->avgs_lock);
+	now = sched_clock();
+	collect_percpu_times(group, PSI_AVGS, NULL);
+	if (now >= group->avg_next_update)
+		group->avg_next_update = update_averages(group, now);
+	mutex_unlock(&group->avgs_lock);
+	return group->avg[res * 2][0]; /* 2:2 * res = psi_some */
+}
+#endif
 
 int psi_show(struct seq_file *m, struct psi_group *group, enum psi_res res)
 {

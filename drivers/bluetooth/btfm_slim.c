@@ -34,7 +34,7 @@ int btfm_slim_write(struct btfmslim *btfmslim,
 
 	BTFMSLIM_DBG("Write to %s", pgd?"PGD":"IFD");
 	msg.start_offset = SLIM_SLAVE_REG_OFFSET + reg;
-	msg.num_bytes = bytes;
+	msg.num_bytes = (uint8_t)bytes;
 	msg.comp = NULL;
 
 	for ( ; slim_write_tries != 0; slim_write_tries--) {
@@ -79,7 +79,7 @@ int btfm_slim_read(struct btfmslim *btfmslim, unsigned short reg,
 
 	BTFMSLIM_DBG("Read from %s", pgd?"PGD":"IFD");
 	msg.start_offset = SLIM_SLAVE_REG_OFFSET + reg;
-	msg.num_bytes = bytes;
+	msg.num_bytes = (uint8_t)bytes;
 	msg.comp = NULL;
 
 	for ( ; slim_read_tries != 0; slim_read_tries--) {

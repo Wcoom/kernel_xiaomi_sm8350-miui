@@ -1891,7 +1891,157 @@ TRACE_EVENT(f2fs_iostat,
 		__entry->fs_cdrio, __entry->fs_nrio, __entry->fs_mrio)
 );
 
+#ifdef CONFIG_F2FS_GRADING_SSR
+DECLARE_EVENT_CLASS(f2fs_grading_ssr,
+
+	TP_PROTO(unsigned int left, unsigned int free,
+					unsigned int seq),
+
+	TP_ARGS(left, free, seq),
+
+	TP_STRUCT__entry(
+		__field(unsigned int, left)
+		__field(unsigned int, free)
+		__field(unsigned int, seq)
+	),
+
+	TP_fast_assign(
+		__entry->left = left;
+		__entry->free = free;
+		__entry->seq  = seq;
+	),
+
+	TP_printk("ssr :left_space %u free_segments: %u is_seq: %u ",
+		__entry->left, __entry->free, __entry->seq)
+);
+
+DEFINE_EVENT(f2fs_grading_ssr, f2fs_grading_ssr_allocate,
+
+	TP_PROTO(unsigned int left, unsigned int free,
+					unsigned int seq),
+
+	TP_ARGS(left, free, seq)
+);
+#endif
+
+#ifdef CONFIG_F2FS_FS_DEDUP
+DECLARE_EVENT_CLASS(f2fs__dedup_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner),
+
+	TP_STRUCT__entry(
+		__field(dev_t,  dev)
+		__field(ino_t,  ino)
+		__field(ino_t,  pino)
+		__field(loff_t, size)
+		__field(unsigned int, nlink)
+		__field(ino_t,  inner_ino)
+		__field(unsigned int, inner_nlink)
+	),
+
+		TP_fast_assign(
+		__entry->dev    = inode->i_sb->s_dev;
+		__entry->ino    = inode->i_ino;
+		__entry->pino   = F2FS_I(inode)->i_pino;
+		__entry->nlink  = inode->i_nlink;
+		__entry->size   = inode->i_size;
+		__entry->inner_ino  = inner->i_ino;
+		__entry->inner_nlink    = inner->i_nlink;
+	),
+
+	TP_printk("dev = (%d,%d), ino = %lu, pino = %lu, "
+		"i_size = %lld, i_nlink = %u, "
+		"inner = %lu, inner i_nlink = %u",
+		show_dev_ino(__entry),
+		(unsigned long)__entry->pino,
+		__entry->size,
+		(unsigned int)__entry->nlink,
+		(unsigned long)__entry->inner_ino,
+		(unsigned int)__entry->inner_nlink)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_ioc_create_layered_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_ioc_dedup_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_revoke_inode,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_revoke_fail,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_inode, f2fs_dedup_dec_inner_link,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DECLARE_EVENT_CLASS(f2fs__dedup_map,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner),
+
+	TP_STRUCT__entry(
+		__field(dev_t,  dev)
+		__field(ino_t,  ino)
+		__field(loff_t, size)
+		__field(ino_t,  inner_ino)
+		__field(unsigned int, inner_nlink)
+	),
+
+	TP_fast_assign(
+		__entry->dev    = inode->i_sb->s_dev;
+		__entry->ino    = inode->i_ino;
+		__entry->size   = inode->i_size;
+		__entry->inner_ino  = inner->i_ino;
+		__entry->inner_nlink    = inner->i_nlink;
+	),
+
+	TP_printk("dev = (%d,%d), outer ino = %lu, i_size = %lld, "
+		"map to inner ino = %lu, inner i_nlink = %u",
+		show_dev_ino(__entry),
+		__entry->size,
+		(unsigned long)__entry->inner_ino,
+		(unsigned int)__entry->inner_nlink)
+);
+
+DEFINE_EVENT(f2fs__dedup_map, f2fs_dedup_map_readpage,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+
+DEFINE_EVENT(f2fs__dedup_map, f2fs_dedup_map_blocks,
+
+	TP_PROTO(struct inode *inode, struct inode *inner),
+
+	TP_ARGS(inode, inner)
+);
+#endif /* CONFIG_F2FS_FS_DEDUP */
 #endif /* _TRACE_F2FS_H */
 
- /* This part must be outside protection */
+/* This part must be outside protection */
 #include <trace/define_trace.h>

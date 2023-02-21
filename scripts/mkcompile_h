@@ -38,7 +38,7 @@ fi
 if [ -z "$KBUILD_BUILD_TIMESTAMP" ]; then
 	TIMESTAMP=`date`
 else
-	TIMESTAMP=$KBUILD_BUILD_TIMESTAMP
+	TIMESTAMP=`date -d $KBUILD_BUILD_TIMESTAMP`
 fi
 if test -z "$KBUILD_BUILD_USER"; then
 	LINUX_COMPILE_BY=$(whoami | sed 's/\\/\\\\/')

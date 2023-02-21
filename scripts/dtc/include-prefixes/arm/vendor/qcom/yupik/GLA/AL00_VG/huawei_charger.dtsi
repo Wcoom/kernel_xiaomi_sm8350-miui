@@ -1,0 +1,34 @@
+&boost_5v {
+	status = "ok";
+};
+
+&wired_channel_switch {
+	status = "ok";
+};
+
+&ovp_channel_switch {
+	status = "ok";
+};
+
+&direct_charger_sc4 {
+	need_wired_sw_off = <1>;
+	need_boost_5v = <1>;
+};
+
+&qupv3_se2_i2c {
+	sc8562@64{
+		gpio_lpm = <&tlmm 174 0>;
+		status = "ok";
+	};
+};
+
+&qupv3_se15_i2c {
+	sc8562@64{
+		gpio_lpm = <&tlmm 153 0>;
+		status = "ok";
+	};
+};
+
+&huawei_batt_info {
+    shield_ct_sign = <1>;
+};

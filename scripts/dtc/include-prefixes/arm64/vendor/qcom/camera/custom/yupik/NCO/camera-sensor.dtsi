@@ -1,0 +1,12 @@
+&apps_rsc{
+	rpmh-regulator-ldoc9 {
+		L9C:
+		pm8350c_l9: regulator-pm8350c-l9 {
+			regulator-min-microvolt = <2700000>;
+			regulator-max-microvolt = <3544000>;
+			qcom,init-voltage = <2960000>;
+		};
+	};
+};
+
+#include "camera-sensor-base.dtsi"

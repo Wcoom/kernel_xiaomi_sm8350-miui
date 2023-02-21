@@ -60,8 +60,10 @@ struct qpnp_led_dev {
 	const char		*label;
 	const char		*default_trigger;
 	u8			id;
+	u8			cust_brightness;
 	bool			blinking;
 	bool			breathing;
+	bool			disting_led;
 };
 
 struct qpnp_tri_led_chip {
@@ -274,6 +276,9 @@ static int qpnp_tri_led_set_brightness(struct led_classdev *led_cdev,
 	int rc = 0;
 
 	mutex_lock(&led->lock);
+	if ((led->disting_led) && (led->cust_brightness) && (brightness >= led->cust_brightness))
+		brightness = led->cust_brightness;
+
 	if (brightness > LED_FULL)
 		brightness = LED_FULL;
 
@@ -476,6 +481,8 @@ static int qpnp_tri_led_parse_dt(struct qpnp_tri_led_chip *chip)
 	struct pwm_args pargs;
 	const __be32 *addr;
 	int rc = 0, id, i = 0;
+	int rt = 0;
+	int custom_brightness = 0;
 
 	addr = of_get_address(chip->dev->of_node, 0, NULL, NULL);
 	if (!addr) {
@@ -546,6 +553,11 @@ static int qpnp_tri_led_parse_dt(struct qpnp_tri_led_chip *chip)
 			return rc;
 		}
 
+		led->disting_led = of_property_read_bool(child_node, "leds_disting");
+		rt = of_property_read_u32(child_node, "cust_brightness", &custom_brightness);
+		if (rt)
+			dev_err(chip->dev, "Get cust_brightness  failed, rt=%d\n", rt);
+		led->cust_brightness = custom_brightness;
 		pwm_get_args(led->pwm_dev, &pargs);
 		if (pargs.period == 0)
 			led->pwm_setting.pre_period_ns = PWM_PERIOD_DEFAULT_NS;

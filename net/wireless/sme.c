@@ -689,13 +689,17 @@ void __cfg80211_connect_result(struct net_device *dev,
 	ASSERT_WDEV_LOCK(wdev);
 
 	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION &&
-		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT)) {
+		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT &&
+		    wdev->iftype != NL80211_IFTYPE_P2P_GO)) {
 		cfg80211_put_bss(wdev->wiphy, cr->bss);
 		return;
 	}
 
 	nl80211_send_connect_result(wiphy_to_rdev(wdev->wiphy), dev, cr,
 				    GFP_KERNEL);
+
+	if (wdev->iftype == NL80211_IFTYPE_P2P_GO)
+		return;
 
 #ifdef CONFIG_CFG80211_WEXT
 	if (wextev) {
@@ -1182,7 +1186,8 @@ int cfg80211_connect(struct cfg80211_registered_device *rdev,
 	 */
 	if (wdev->ssid_len &&
 	    (wdev->ssid_len != connect->ssid_len ||
-	     memcmp(wdev->ssid, connect->ssid, wdev->ssid_len)))
+	     memcmp(wdev->ssid, connect->ssid, wdev->ssid_len)) &&
+	    (wdev->iftype != NL80211_IFTYPE_P2P_GO))
 		return -EALREADY;
 
 	/*

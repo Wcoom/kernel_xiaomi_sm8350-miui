@@ -8,6 +8,13 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/amba/bus.h>
+#ifdef CONFIG_BLACKBOX
+#include <platform/linux/rainbow.h>
+#endif
+
+#ifdef CONFIG_DFX_RAINBOW_HIMNTN
+static bool himntn_switch;
+#endif
 
 #define QCOM_PROXY_CONSUMER_AMBA_ID(pid)			\
 	{				\
@@ -21,9 +28,7 @@
  * satisfy of_devlink.
  */
 static const struct of_device_id qcom_proxy_of_consumer_match[] = {
-#if !IS_ENABLED(CONFIG_SERIAL_MSM_GENI_CONSOLE)
 	{ .compatible = "qcom,msm-geni-console"},
-#endif
 #if !IS_ENABLED(CONFIG_MSM_JTAGV8)
 	{ .compatible = "qcom,jtagv8-mm"},
 #endif
@@ -85,7 +90,13 @@ static struct amba_driver qcom_proxy_amba_of_consumer_driver = {
 static int __init qcom_proxy_of_init(void)
 {
 	int ret;
-
+#ifdef CONFIG_DFX_RAINBOW_HIMNTN
+	cmd_himntn_item_switch(HIMNTN_ID_UART_LOG_SWITCH, &himntn_switch);
+#if IS_ENABLED(CONFIG_SERIAL_MSM_GENI_CONSOLE)
+	if (himntn_switch)
+		memset((void* )(&qcom_proxy_of_consumer_match[0]), 0, sizeof(qcom_proxy_of_consumer_match[0]));
+#endif
+#endif
 	ret = platform_driver_register(&qcom_proxy_of_consumer_driver);
 	if (ret < 0)
 		return ret;

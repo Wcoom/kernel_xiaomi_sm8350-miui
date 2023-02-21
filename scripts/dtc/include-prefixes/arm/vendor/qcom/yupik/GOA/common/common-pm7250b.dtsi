@@ -1,0 +1,3 @@
+#include "../../../yupik-idp-pm7250b.dtsi"
+#include "../../common/huawei_dev_detect/huawei_dev_detect.dtsi"
+

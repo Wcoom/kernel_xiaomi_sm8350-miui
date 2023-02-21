@@ -14,6 +14,7 @@
 #include "adreno_profile.h"
 #include "adreno_ringbuffer.h"
 #include "kgsl_sharedmem.h"
+#include "gpu_dmd.h"
 
 /* ADRENO_DEVICE - Given a kgsl_device return the adreno device struct */
 #define ADRENO_DEVICE(device) \

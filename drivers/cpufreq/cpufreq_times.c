@@ -21,6 +21,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/threads.h>
+#include <../kernel/sched/sched.h>
 
 static DEFINE_SPINLOCK(task_time_in_state_lock); /* task->time_in_state */
 
@@ -35,6 +36,9 @@ struct cpu_freqs {
 	unsigned int offset;
 	unsigned int max_state;
 	unsigned int last_index;
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+	unsigned int *current_table;
+#endif
 	unsigned int freq_table[0];
 };
 
@@ -130,6 +134,89 @@ int proc_time_in_state_show(struct seq_file *m, struct pid_namespace *ns,
 	return 0;
 }
 
+int proc_time_in_state_total_show(struct seq_file *m, struct pid_namespace *ns,
+	struct pid *pid, struct task_struct *p)
+{
+	unsigned int cpu, i;
+	u64 cputime;
+	u64 cputime_total = 0;
+	unsigned long flags;
+	struct cpu_freqs *freqs;
+	struct cpu_freqs *last_freqs = NULL;
+	struct task_struct *child = p;
+
+	spin_lock_irqsave(&task_time_in_state_lock, flags);
+	for_each_possible_cpu(cpu) {
+		freqs = all_freqs[cpu];
+		if (!freqs || freqs == last_freqs)
+			continue;
+		last_freqs = freqs;
+
+		seq_printf(m, "cpu%u\n", cpu);
+		for (i = 0; i < freqs->max_state; i++) {
+			cputime = 0;
+			rcu_read_lock();
+			do {
+				if (freqs->offset + i < child->max_state &&
+				    child->time_in_state)
+				    cputime += child->time_in_state[freqs->offset + i];
+			} while_each_thread(p, child);
+			rcu_read_unlock();
+			seq_printf(m, "%u %lu\n", freqs->freq_table[i],
+				   (unsigned long)nsec_to_clock_t(cputime));
+			cputime_total += freqs->freq_table[i] * (unsigned long)nsec_to_clock_t(cputime);
+		}
+	}
+	seq_printf(m, "%lu\n", cputime_total);
+	spin_unlock_irqrestore(&task_time_in_state_lock, flags);
+	return 0;
+}
+
+static u64 get_proc_each_cpu_load(struct cpu_freqs *freqs, struct task_struct *p,
+	struct task_struct *child, char dmips_value_buffer[], unsigned int cpu)
+{
+	unsigned int i;
+	u64 cputime;
+	u64 cputime_total;
+	cputime_total = 0;
+	for (i = 0; i < freqs->max_state; i++) {
+		cputime = 0;
+		rcu_read_lock();
+		do {
+			if (freqs->offset + i < child->max_state &&
+				child->time_in_state)
+				cputime += child->time_in_state[freqs->offset + i];
+		} while_each_thread(p, child);
+		rcu_read_unlock();
+		cputime_total += (freqs->freq_table[i] * (cputime / NS_TO_MS) *
+			dmips_value_buffer[cpu]);
+	}
+	return cputime_total;
+}
+
+u64 get_proc_cpu_load(struct task_struct *p, char dmips_value_buffer[], unsigned int dmips_num)
+{
+	unsigned int cpu;
+	u64 cputime_total = 0;
+	unsigned long flags;
+	struct cpu_freqs *freqs;
+	struct cpu_freqs *last_freqs = NULL;
+	struct task_struct *child = p;
+
+	spin_lock_irqsave(&task_time_in_state_lock, flags);
+	for_each_possible_cpu(cpu) {
+		freqs = all_freqs[cpu];
+		if (!freqs || freqs == last_freqs)
+			continue;
+		last_freqs = freqs;
+		if (cpu >= dmips_num)
+			break;
+		cputime_total += get_proc_each_cpu_load(freqs, p, child, dmips_value_buffer, cpu);
+	}
+	spin_unlock_irqrestore(&task_time_in_state_lock, flags);
+	return cputime_total;
+}
+
 void cpufreq_acct_update_power(struct task_struct *p, u64 cputime)
 {
 	unsigned long flags;
@@ -143,8 +230,14 @@ void cpufreq_acct_update_power(struct task_struct *p, u64 cputime)
 
 	spin_lock_irqsave(&task_time_in_state_lock, flags);
 	if ((state < p->max_state || !cpufreq_task_times_realloc_locked(p)) &&
-	    p->time_in_state)
+	    p->time_in_state) {
 		p->time_in_state[state] += cputime;
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+		/* Account power usage */
+		if (p->cpu_power != ULLONG_MAX)
+			p->cpu_power += (unsigned long long)((unsigned long)freqs->current_table[freqs->last_index] * cputime / NSEC_PER_MSEC);
+#endif
+	}
 	spin_unlock_irqrestore(&task_time_in_state_lock, flags);
 }
 
@@ -184,8 +277,20 @@ void cpufreq_times_create_policy(struct cpufreq_policy *policy)
 	freqs = tmp;
 	freqs->max_state = count;
 
-	cpufreq_for_each_valid_entry(pos, table)
-		freqs->freq_table[index++] = pos->frequency;
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+	freqs->current_table = kzalloc(sizeof(int) * count, GFP_KERNEL);
+	if (!freqs->current_table) {
+		kfree(freqs);
+		return;
+	}
+#endif
+	cpufreq_for_each_valid_entry(pos, table) {
+		freqs->freq_table[index] = pos->frequency;
+#ifdef CONFIG_CPU_FREQ_POWER_STAT
+		freqs->current_table[index] = pos->electric_current;
+#endif
+		index++;
+	}
 
 	index = cpufreq_times_get_index(freqs, policy->cur);
 	if (index >= 0)

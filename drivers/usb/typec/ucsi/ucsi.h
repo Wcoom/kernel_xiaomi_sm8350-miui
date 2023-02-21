@@ -284,13 +284,18 @@ struct ucsi {
 
 #define UCSI_MAX_SVID		5
 #define UCSI_MAX_ALTMODES	(UCSI_MAX_SVID * 6)
-
+enum con_pend_event_type {
+	IVALID_PEND = 0,
+	PEND_PR_SWAP,
+	PEND_DR_SWAP
+};
 struct ucsi_connector {
 	int num;
 
 	struct ucsi *ucsi;
 	struct mutex lock; /* port lock */
 	struct work_struct work;
+	unsigned long pend_event;
 	struct completion complete;
 
 	struct typec_port *port;

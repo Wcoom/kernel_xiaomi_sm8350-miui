@@ -109,6 +109,7 @@ static void adreno_ringbuffer_wptr(struct adreno_device *adreno_dev,
 		 * If WPTR update fails, take inline snapshot and trigger
 		 * recovery.
 		 */
+		report_gpu_dmd_inirq(ADRENO_GMU_FAULT_SKIP_SNAPSHOT, "adreno_ringbuffer_wptr2");
 		gmu_fault_snapshot(device);
 		adreno_set_gpu_fault(adreno_dev,
 			ADRENO_GMU_FAULT_SKIP_SNAPSHOT);

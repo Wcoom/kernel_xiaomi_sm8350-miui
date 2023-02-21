@@ -33,6 +33,7 @@
 
 #include "smcinvoke_object.h"
 #include "../../misc/qseecom_kernel.h"
+#include "cmdmonitor.h"
 
 #define SMCINVOKE_DEV                   "smcinvoke"
 #define SMCINVOKE_TZ_ROOT_OBJ           1
@@ -51,7 +52,7 @@
 #define SMCINVOKE_MEM_RGN_OBJ           1
 #define SMCINVOKE_MEM_PERM_RW           6
 #define SMCINVOKE_SCM_EBUSY_WAIT_MS 30
-#define SMCINVOKE_SCM_EBUSY_MAX_RETRY 67
+#define SMCINVOKE_SCM_EBUSY_MAX_RETRY 167
 
 
 /* TZ defined values - Start */
@@ -1880,6 +1881,7 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 	union  smcinvoke_arg *args_buf = NULL;
 	struct smcinvoke_file_data *tzobj = filp->private_data;
 	struct qtee_shm in_shm = {0}, out_shm = {0};
+	struct cmd_monitor *item = NULL;
 
 	/*
 	 * Hold reference to remote object until invoke op is not
@@ -1961,9 +1963,11 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 		goto out;
 	}
 
+	item = cmd_monitor_log(invoke_cmd);
 	ret = prepare_send_scm_msg(in_msg, in_shm.paddr, inmsg_size,
 					out_msg, out_shm.paddr, outmsg_size,
 					&req, args_buf, &tz_acked, &in_shm, &out_shm);
+	cmd_monitor_logend(item);
 
 	/*
 	 * If scm_call is success, TZ owns responsibility to release
@@ -2264,6 +2268,7 @@ static int smcinvoke_init(void)
 {
 	ipc_logging_context = ipc_log_context_create(IPC_LOG_PAGE_COUNT,
 					"smcinvoke", 0);
+	init_cmd_monitor();
 	return platform_driver_register(&smcinvoke_plat_driver);
 }
 

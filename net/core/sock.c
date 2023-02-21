@@ -84,6 +84,7 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#define AID_INET         KGIDT_INIT(3003)
 
 #include <asm/unaligned.h>
 #include <linux/capability.h>
@@ -113,6 +114,7 @@
 #include <linux/static_key.h>
 #include <linux/memcontrol.h>
 #include <linux/prefetch.h>
+#include <linux/uidgid.h>
 
 #include <linux/uaccess.h>
 
@@ -138,6 +140,14 @@
 
 #include <net/tcp.h>
 #include <net/busy_poll.h>
+
+#ifdef CONFIG_HW_DPIMARK_MODULE
+#include <hwnet/hw_dpi_mark/dpi_hw_hook.h>
+#endif
+
+#ifdef CONFIG_HUAWEI_XENGINE
+#include <emcom/emcom_xengine.h>
+#endif
 
 static DEFINE_MUTEX(proto_list_mutex);
 static LIST_HEAD(proto_list);
@@ -578,7 +588,7 @@ static int sock_setbindtodevice_locked(struct sock *sk, int ifindex)
 
 	/* Sorry... */
 	ret = -EPERM;
-	if (!ns_capable(net->user_ns, CAP_NET_RAW))
+	if (!ns_capable(net->user_ns, CAP_NET_RAW) && !in_egroup_p(AID_INET))
 		goto out;
 
 	ret = -EINVAL;
@@ -733,7 +743,16 @@ int sock_setsockopt(struct socket *sock, int level, int optname,
 	/*
 	 *	Options without arguments
 	 */
+#ifdef CONFIG_HUAWEI_XENGINE
+	if (optname == SO_XENGINE_PROXYUID)
+		return emcom_xengine_setproxyuid(sk, optval, optlen);
 
+	if (optname == SO_XENGINE_SOCKFLAG)
+		return emcom_xengine_setsockflag(sk, optval, optlen);
+
+	if (optname == SO_XENGINE_BINDTODEVICE)
+		return emcom_xengine_setbind2device(sk, optval, optlen);
+#endif
 	if (optname == SO_BINDTODEVICE)
 		return sock_setbindtodevice(sk, optval, optlen);
 
@@ -1062,7 +1081,11 @@ set_rcvbuf:
 		if (!ns_capable(sock_net(sk)->user_ns, CAP_NET_ADMIN)) {
 			ret = -EPERM;
 		} else if (val != sk->sk_mark) {
+#ifdef CONFIG_HW_DPIMARK_MODULE
+			sk->sk_mark = get_mplk_somark(sk, val);
+#else
 			sk->sk_mark = val;
+#endif
 			sk_dst_reset(sk);
 		}
 		break;
@@ -1182,6 +1205,16 @@ set_rcvbuf:
 }
 EXPORT_SYMBOL(sock_setsockopt);
 
+static const struct cred *sk_get_peer_cred(struct sock *sk)
+{
+	const struct cred *cred;
+
+	spin_lock(&sk->sk_peer_lock);
+	cred = get_cred(sk->sk_peer_cred);
+	spin_unlock(&sk->sk_peer_lock);
+
+	return cred;
+}
 
 static void cred_to_ucred(struct pid *pid, const struct cred *cred,
 			  struct ucred *ucred)
@@ -1356,7 +1389,11 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		struct ucred peercred;
 		if (len > sizeof(peercred))
 			len = sizeof(peercred);
+
+		spin_lock(&sk->sk_peer_lock);
 		cred_to_ucred(sk->sk_peer_pid, sk->sk_peer_cred, &peercred);
+		spin_unlock(&sk->sk_peer_lock);
+
 		if (copy_to_user(optval, &peercred, len))
 			return -EFAULT;
 		goto lenout;
@@ -1364,20 +1401,23 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 
 	case SO_PEERGROUPS:
 	{
+		const struct cred *cred;
 		int ret, n;
 
-		if (!sk->sk_peer_cred)
+		cred = sk_get_peer_cred(sk);
+		if (!cred)
 			return -ENODATA;
 
-		n = sk->sk_peer_cred->group_info->ngroups;
+		n = cred->group_info->ngroups;
 		if (len < n * sizeof(gid_t)) {
 			len = n * sizeof(gid_t);
+			put_cred(cred);
 			return put_user(len, optlen) ? -EFAULT : -ERANGE;
 		}
 		len = n * sizeof(gid_t);
 
-		ret = groups_to_user((gid_t __user *)optval,
-				     sk->sk_peer_cred->group_info);
+		ret = groups_to_user((gid_t __user *)optval, cred->group_info);
+		put_cred(cred);
 		if (ret)
 			return ret;
 		goto lenout;
@@ -1496,6 +1536,13 @@ int sock_getsockopt(struct socket *sock, int level, int optname,
 		if (v.val < MIN_NAPI_ID)
 			v.val = 0;
 
+		break;
+#endif
+
+#ifdef CONFIG_HUAWEI_XENGINE
+
+	case SO_XENGINE_SOCKFLAG:
+		v.val = sk->hicom_flag;
 		break;
 #endif
 
@@ -1677,9 +1724,27 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 
 		mem_cgroup_sk_alloc(sk);
 		cgroup_sk_alloc(&sk->sk_cgrp_data);
+#ifdef CONFIG_HW_NETQOS_SCHED
+		sk->sk_netqos_level = -1;
+		sk->sk_netqos_time = 0;
+		sk->sk_netqos_ttime = 0;
+		sk->sk_netqos_tx = 0;
+		sk->sk_netqos_rx = 0;
+#endif
+#ifdef CONFIG_HWDPI_MODULE
+		sk->sk_hwdpi_mark = 0;
+#endif
 		sock_update_classid(&sk->sk_cgrp_data);
 		sock_update_netprioidx(&sk->sk_cgrp_data);
 		sk_tx_queue_clear(sk);
+
+#ifdef CONFIG_CGROUP_BPF
+		*(sk->sk_process_name) = '\0';
+#endif
+
+#ifdef CONFIG_HUAWEI_KSTATE
+		sk->sk_pid = 0;
+#endif
 	}
 
 	return sk;
@@ -1719,9 +1784,10 @@ static void __sk_destruct(struct rcu_head *head)
 		sk->sk_frag.page = NULL;
 	}
 
-	if (sk->sk_peer_cred)
-		put_cred(sk->sk_peer_cred);
+	/* We do not need to acquire sk->sk_peer_lock, we are the last user. */
+	put_cred(sk->sk_peer_cred);
 	put_pid(sk->sk_peer_pid);
+
 	if (likely(sk->sk_net_refcnt))
 		put_net(sock_net(sk));
 	sk_prot_free(sk->sk_prot_creator, sk);
@@ -2348,8 +2414,6 @@ static void sk_leave_memory_pressure(struct sock *sk)
 	}
 }
 
-/* On 32bit arches, an skb frag is limited to 2^15 */
-#define SKB_FRAG_PAGE_ORDER	get_order(32768)
 DEFINE_STATIC_KEY_FALSE(net_high_order_alloc_disable_key);
 
 /**
@@ -2927,6 +2991,8 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	sk->sk_peer_pid 	=	NULL;
 	sk->sk_peer_cred	=	NULL;
 	sk->sk_write_pending	=	0;
+	spin_lock_init(&sk->sk_peer_lock);
+
 	sk->sk_rcvlowat		=	1;
 	sk->sk_rcvtimeo		=	MAX_SCHEDULE_TIMEOUT;
 	sk->sk_sndtimeo		=	MAX_SCHEDULE_TIMEOUT;
@@ -2947,7 +3013,14 @@ void sock_init_data(struct socket *sock, struct sock *sk)
 	WRITE_ONCE(sk->sk_pacing_shift, 10);
 	sk->sk_incoming_cpu = -1;
 
+#ifdef CONFIG_HW_DPIMARK_MODULE
+	sk->sk_born_stamp = jiffies;
+#endif
 	sk_rx_queue_clear(sk);
+#ifdef CONFIG_HUAWEI_XENGINE
+	sk->hicom_flag = 0;
+	sk->is_mp_flow_bind = 0;
+#endif
 	/*
 	 * Before updating sk_refcnt, we must commit prior changes to memory
 	 * (Documentation/RCU/rculist_nulls.txt for details)

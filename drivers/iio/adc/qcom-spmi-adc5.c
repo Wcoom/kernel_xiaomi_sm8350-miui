@@ -1039,6 +1039,55 @@ static const struct adc5_channels adc7_chans_pmic[ADC5_MAX_CHANNEL] = {
 					SCALE_HW_CALIB_THERM_100K_PU_PM7)
 };
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static const struct adc5_channels adc7_chans_pmic_cust[ADC5_MAX_CHANNEL] = {
+	[ADC7_REF_GND]		= ADC5_CHAN_VOLT("ref_gnd", 0,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_1P25VREF]		= ADC5_CHAN_VOLT("vref_1p25", 0,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_VREF_VADC]	= ADC5_CHAN_VOLT("vref_vadc", 0,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_VPH_PWR]		= ADC5_CHAN_VOLT("vph_pwr", 1,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_VBAT_SNS]		= ADC5_CHAN_VOLT("vbat_sns", 3,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_AMUX_THM3]	= ADC5_CHAN_TEMP("smb_temp", 0,
+					SCALE_HW_CALIB_PM7_SMB_TEMP)
+	[ADC7_CHG_TEMP]		= ADC5_CHAN_TEMP("chg_temp", 0,
+					SCALE_HW_CALIB_PM7_CHG_TEMP)
+	[ADC7_IIN_FB]		= ADC5_CHAN_CUR("iin_fb", 9,
+					SCALE_HW_CALIB_CUR)
+	[ADC7_IIN_SMB]		= ADC5_CHAN_CUR("iin_smb", 9,
+					SCALE_HW_CALIB_CUR)
+	[ADC7_ICHG_SMB]		= ADC5_CHAN_CUR("ichg_smb", 10,
+					SCALE_HW_CALIB_CUR)
+	[ADC7_ICHG_FB]		= ADC5_CHAN_CUR("ichg_fb", 11,
+					SCALE_HW_CALIB_CUR_RAW)
+	[ADC7_DIE_TEMP]		= ADC5_CHAN_TEMP("die_temp", 0,
+					SCALE_HW_CALIB_PMIC_THERM_PM7)
+	[ADC7_AMUX_THM1_100K_PU]	= ADC5_CHAN_TEMP("amux_thm1_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_AMUX_THM2_100K_PU]	= ADC5_CHAN_TEMP("amux_thm2_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_AMUX_THM3_100K_PU]	= ADC5_CHAN_TEMP("amux_thm3_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_AMUX_THM4_100K_PU]	= ADC5_CHAN_TEMP("amux_thm4_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_AMUX_THM5_100K_PU]	= ADC5_CHAN_TEMP("amux_thm5_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_AMUX_THM6_100K_PU]	= ADC5_CHAN_TEMP("amux_thm6_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_GPIO1_100K_PU]	= ADC5_CHAN_TEMP("gpio1_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_GPIO2_100K_PU]	= ADC5_CHAN_TEMP("gpio2_pu2", 0,
+					SCALE_HW_CALIB_THERM_100K_PU_PM7)
+	[ADC7_GPIO3]    = ADC5_CHAN_VOLT("gpio3_nopu", 0,
+					SCALE_HW_CALIB_DEFAULT)
+	[ADC7_GPIO4_100K_PU_BATT_ID]	= ADC5_CHAN_TEMP("gpio4_pu2", 0,
+					SCALE_HW_CALIB_PM5_GEN3_BATT_ID_VOLTAGE_100K)
+};
+#endif
+
 static const struct adc5_channels adc5_chans_rev2[ADC5_MAX_CHANNEL] = {
 	[ADC5_REF_GND]		= ADC5_CHAN_VOLT("ref_gnd", 0,
 					SCALE_HW_CALIB_DEFAULT)
@@ -1235,6 +1284,20 @@ static const struct adc5_data adc7_data_pmic = {
 				64000, 128000},
 };
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static const struct adc5_data adc7_data_pmic_cust = {
+	.name = "pm-adc7",
+	.full_scale_code_volt = 0x70e4,
+	.adc_chans = adc7_chans_pmic_cust,
+	.decimation = (unsigned int [ADC5_DECIMATION_SAMPLES_MAX])
+				{85, 340, 1360},
+	.hw_settle_2 = (unsigned int [VADC_HW_SETTLE_SAMPLES_MAX])
+				{15, 100, 200, 300, 400, 500, 600, 700,
+				1000, 2000, 4000, 8000, 16000, 32000,
+				64000, 128000},
+};
+#endif
+
 static const struct adc5_data adc5_data_pmic5_lite = {
 	.name = "pm-adc5-lite",
 	.full_scale_code_volt = 0x70e4,
@@ -1296,6 +1359,9 @@ static int adc5_get_dt_data(struct adc5_chip *adc, struct device_node *node)
 	const struct of_device_id *id;
 	const struct adc5_data *data;
 	int ret;
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	u32  value = 0;
+#endif
 
 	adc->nchannels = of_get_available_child_count(node);
 	if (!adc->nchannels)
@@ -1314,10 +1380,24 @@ static int adc5_get_dt_data(struct adc5_chip *adc, struct device_node *node)
 	chan_props = adc->chan_props;
 	iio_chan = adc->iio_chans;
 	id = of_match_node(adc5_match_table, node);
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	if (id) {
+		ret = of_property_read_u32(node, "qcom,customize-channel", &value);
+		if ((!ret) && (value == 1))  {
+			data  = &adc7_data_pmic_cust;
+		} else {
+			data = id->data;
+		}
+	} else {
+		data = &adc5_data_pmic;
+	}
+#else
 	if (id)
 		data = id->data;
 	else
 		data = &adc5_data_pmic;
+#endif
+
 	adc->data = data;
 
 	for_each_available_child_of_node(node, child) {

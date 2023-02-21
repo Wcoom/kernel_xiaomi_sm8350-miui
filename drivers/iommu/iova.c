@@ -882,7 +882,7 @@ error:
  * dynamic size tuning described in the paper.
  */
 
-#define IOVA_MAG_SIZE 128
+#define IOVA_MAG_SIZE 126
 
 struct iova_magazine {
 	unsigned long size;

@@ -1,0 +1,36 @@
+&huawei_wifi_info{
+    compatible = "huawei,hw_wifi_info";
+    status = "ok";
+    wifi,pubfile_id = "goethe_w09";
+    wifi,chiptype = "WIFI_QUALCOMM_WCN6851";
+};
+
+&hi110x {
+	hi110x,gpio_power_on = <&tlmm 8 0>;					/*GPIO_8*/
+	hi110x,gpio_bfgx_power_on = <&tlmm 25 0>;			/*GPIO_25*/
+	hi110x,gpio_wlan_power_on = <&tlmm 72 0>;           /*GPIO_72*/
+
+	hi110x,gpio_ssi_clk  = <&tlmm 125 0>;           		/*GPIO_125*/
+	hi110x,gpio_ssi_data = <&tlmm 120 0>;           		/*GPIO_120*/
+};
+
+&hisi_wifi {
+	hi110x,gpio_wlan_wakeup_host =  <&tlmm 79 0>;       /*GPIO_79*/
+	hi110x,gpio_host_wakeup_wlan =  <&tlmm 98 0>;      	/*GPIO_98*/
+	hi110x,gpio_wlan_flow_ctrl = <&tlmm 73 0>;      	/*GPIO_73*/
+};
+
+&hisi_bfgx {
+	hi110x,gpio_bfgx_wakeup_host = <&tlmm 35 0>;        /*GPIO_35*/
+	hi110x,gpio_timesync = <&tlmm 187 0>;        		/*GPIO_187*/
+};
+
+&singleap_wifionly {
+    compatible = "huawei,singleap_wifionly";
+    is_wifionly = "1";
+    status = "ok";
+};
+
+&hisi_cust_cfg {
+    ini_file_name = "/vendor/etc/cfg_udp_1102a_pilot_goethe.ini";
+};

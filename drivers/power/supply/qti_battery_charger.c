@@ -21,7 +21,26 @@
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/soc/qcom/battery_charger.h>
 #include "qti_typec_class.h"
-
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#include <huawei_platform/hwpower/common_module/power_glink.h>
+#include <chipset_common/hwpower/common_module/power_supply_interface.h>
+#include <chipset_common/hwpower/common_module/power_devices_info.h>
+#include <chipset_common/hwpower/common_module/power_common_macro.h>
+#include <chipset_common/hwpower/common_module/power_cmdline.h>
+#include <chipset_common/hwpower/common_module/power_nv.h>
+#include <chipset_common/hwpower/coul/coul_interface.h>
+#include <chipset_common/hwpower/coul/coul_calibration.h>
+#include <chipset_common/hwpower/battery/battery_model_public.h>
+#include <chipset_common/hwpower/direct_charge/direct_charge_ic_manager.h>
+#include <huawei_platform/power/direct_charger/direct_charger.h>
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+#include <chipset_common/hwmanufac/dev_detect/dev_detect.h>
+#endif
+#endif
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#include <huawei_platform/usb/hw_pogopin.h>
+#include <huawei_platform/usb/hw_pd_dev.h>
+#endif
 #define MSG_OWNER_BC			32778
 #define MSG_TYPE_REQ_RESP		1
 #define MSG_TYPE_NOTIFY			2
@@ -52,6 +71,20 @@
 #define WLS_FW_UPDATE_TIME_MS		1000
 #define WLS_FW_BUF_SIZE			128
 #define DEFAULT_RESTRICT_FCC_UA		1000000
+
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+#define BATTERY_CHG_DEFAULT_CURR_GAIN	1000000
+#define BATTERY_CHG_CURR_GAIN_COVERSION	10000
+#define BATTERY_CHG_CAPACITY_TH		7
+#define BATTERY_CHG_FULL_CAP		100
+
+enum {
+	BK_BATTERY_QCOUL_CURR_CALI_REGISTER = 0,
+	BK_BATTERY_QCOUL_MAX,
+};
+
+static unsigned int g_bk_battery_qcoul_data[BK_BATTERY_QCOUL_MAX];
+#endif
 
 enum usb_connector_type {
 	USB_CONNECTOR_TYPE_TYPEC,
@@ -252,6 +285,11 @@ struct battery_chg_dev {
 	u32				restrict_fcc_ua;
 	u32				last_fcc_ua;
 	u32				usb_icl_ua;
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	u32				original_battery;
+	u32				prev_connector_type;
+	u32				need_transfer_vusb;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	u32				connector_type;
 	u32				usb_prev_mode;
 	bool				restrict_chg_en;
@@ -429,8 +467,10 @@ static int get_property_id(struct psy_state *pst,
 		if (pst->map[i] == prop)
 			return i;
 
+#ifndef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
 	pr_err("No property id for property %d in psy %s\n", prop,
 		pst->psy->desc->name);
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	return -ENOENT;
 }
@@ -651,6 +691,15 @@ static void battery_chg_update_uusb_type(struct battery_chg_dev *bcdev,
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
 	int rc;
 
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	if (pogopin_is_support()) {
+		if (pogopin_is_charging())
+			bcdev->connector_type = USB_CONNECTOR_TYPE_MICRO_USB;
+		else
+			bcdev->connector_type = bcdev->prev_connector_type;
+	}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
+
 	/* Handle the extcon notification for uUSB case only */
 	if (bcdev->connector_type != USB_CONNECTOR_TYPE_MICRO_USB)
 		return;
@@ -666,7 +715,12 @@ static void battery_chg_update_uusb_type(struct battery_chg_dev *bcdev,
 		if (adap_type == POWER_SUPPLY_USB_TYPE_SDP ||
 		    adap_type == POWER_SUPPLY_USB_TYPE_CDP) {
 			/* Device mode connect notification */
-			extcon_set_state_sync(bcdev->extcon, EXTCON_USB, 1);
+			if (pogopin_is_support() && pogopin_extcon_is_needed()) {
+				pr_info("notify pogopin plugin charging event\n");
+				pogopin_event_notify(POGOPIN_PLUG_IN_MICROUSB);
+			} else {
+				extcon_set_state_sync(bcdev->extcon, EXTCON_USB, 1);
+			}
 			bcdev->usb_prev_mode = EXTCON_USB;
 			rc = qti_typec_partner_register(bcdev->typec_class,
 							TYPEC_DEVICE);
@@ -688,8 +742,14 @@ static void battery_chg_update_uusb_type(struct battery_chg_dev *bcdev,
 		if (bcdev->usb_prev_mode == EXTCON_USB ||
 		    bcdev->usb_prev_mode == EXTCON_USB_HOST) {
 			/* Disconnect notification */
-			extcon_set_state_sync(bcdev->extcon,
-					      bcdev->usb_prev_mode, 0);
+			if (pogopin_is_support() && pogopin_extcon_is_needed()) {
+				pr_info("notify pogopin plugout event");
+				pogopin_event_notify_with_data(
+						POGOPIN_PLUG_OUT_MICROUSB, bcdev->usb_prev_mode);
+			} else {
+				extcon_set_state_sync(bcdev->extcon,
+						bcdev->usb_prev_mode, 0);
+			}
 			bcdev->usb_prev_mode = EXTCON_NONE;
 			qti_typec_partner_unregister(bcdev->typec_class);
 		}
@@ -699,13 +759,35 @@ static void battery_chg_update_uusb_type(struct battery_chg_dev *bcdev,
 
 static struct power_supply_desc usb_psy_desc;
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static void power_send_charge_type_message(u32 msg)
+{
+	switch(msg) {
+	case POWER_SUPPLY_USB_TYPE_SDP:
+		power_glink_handle_charge_type_message(POWER_GLINK_NOTIFY_VAL_SDP_CHARGER);
+		break;
+	case POWER_SUPPLY_USB_TYPE_DCP:
+		power_glink_handle_charge_type_message(POWER_GLINK_NOTIFY_VAL_DCP_CHARGER);
+		break;
+	case POWER_SUPPLY_USB_TYPE_CDP:
+		power_glink_handle_charge_type_message(POWER_GLINK_NOTIFY_VAL_CDP_CHARGER);
+		break;
+	default:
+		break;
+	}
+}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
+
 static void battery_chg_update_usb_type_work(struct work_struct *work)
 {
 	struct battery_chg_dev *bcdev = container_of(work,
 					struct battery_chg_dev, usb_type_work);
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
 	int rc;
-
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	static bool first_in = true;
+	int plugin;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	rc = read_property_id(bcdev, pst, USB_ADAP_TYPE);
 	if (rc < 0) {
 		pr_err("Failed to read USB_ADAP_TYPE rc=%d\n", rc);
@@ -717,7 +799,33 @@ static void battery_chg_update_usb_type_work(struct work_struct *work)
 	    pst->prop[USB_ADAP_TYPE] != POWER_SUPPLY_USB_TYPE_PD)
 		bcdev->usb_icl_ua = 0;
 
-	pr_debug("usb_adap_type: %u\n", pst->prop[USB_ADAP_TYPE]);
+	pr_err("usb_adap_type: %u\n", pst->prop[USB_ADAP_TYPE]);
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	if (pst->prop[USB_ADAP_TYPE] == POWER_SUPPLY_USB_TYPE_SDP)
+		pd_dpm_chg_event_notify(CHG_EVT_SDP);
+	if (first_in) {
+		first_in = false;
+		switch (pst->prop[USB_ADAP_TYPE]) {
+		case POWER_SUPPLY_USB_TYPE_SDP:
+		case POWER_SUPPLY_USB_TYPE_DCP:
+		case POWER_SUPPLY_USB_TYPE_CDP:
+		case POWER_SUPPLY_USB_TYPE_C:
+		case POWER_SUPPLY_USB_TYPE_PD:
+		case POWER_SUPPLY_USB_TYPE_PD_PPS:
+			power_glink_handle_dc_connect_message(POWER_GLINK_NOTIFY_VAL_START_CHARGING);
+			power_send_charge_type_message(pst->prop[USB_ADAP_TYPE]);
+			break;
+		default:
+			break;
+		}
+	}
+	(void)power_glink_get_property_value(POWER_GLINK_PROP_ID_GET_PLUGIN_STATUS, &plugin, 1);
+	if (plugin && (usb_psy_desc.type == POWER_SUPPLY_TYPE_USB_DCP) &&
+		(pst->prop[USB_ADAP_TYPE] == POWER_SUPPLY_USB_TYPE_UNKNOWN)) {
+		pr_err("ignore charger type event\n");
+		return;
+	}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	switch (pst->prop[USB_ADAP_TYPE]) {
 	case POWER_SUPPLY_USB_TYPE_SDP:
@@ -954,6 +1062,15 @@ static int usb_psy_get_prop(struct power_supply *psy,
 	if (prop == POWER_SUPPLY_PROP_TEMP)
 		pval->intval = DIV_ROUND_CLOSEST((int)pval->intval, 10);
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATIO
+	if (prop == POWER_SUPPLY_PROP_VOLTAGE_NOW) {
+		if (bcdev->need_transfer_vusb && (direct_charge_get_stage_status() >= DC_STAGE_SWITCH_DETECT)) {
+			(void)dcm_get_ic_vbus(SC_MODE, CHARGE_IC_MAIN, &pval->intval);
+			pval->intval *= POWER_UV_PER_MV;
+		}
+	}
+#endif
+
 	return 0;
 }
 
@@ -1126,6 +1243,11 @@ static int battery_psy_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT_MAX:
 		pval->intval = bcdev->num_thermal_levels;
 		break;
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		pval->intval = (int)pst->prop[prop_id] / 1000; /* 1000 : ma unit */
+		break;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	default:
 		pval->intval = pst->prop[prop_id];
 		break;
@@ -1189,9 +1311,13 @@ static enum power_supply_property battery_props[] = {
 	POWER_SUPPLY_PROP_POWER_AVG,
 };
 
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+static struct power_supply_desc batt_psy_desc = {
+#else
 static const struct power_supply_desc batt_psy_desc = {
-	.name			= "battery",
-	.type			= POWER_SUPPLY_TYPE_BATTERY,
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
+	.name = "battery",
+	.type = POWER_SUPPLY_TYPE_BATTERY,
 	.properties		= battery_props,
 	.num_properties		= ARRAY_SIZE(battery_props),
 	.get_property		= battery_psy_get_prop,
@@ -1204,6 +1330,11 @@ static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 	struct power_supply_config psy_cfg = {};
 	int rc;
 
+	#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	batt_psy_desc.name = "bk_battery";
+	batt_psy_desc.type = POWER_SUPPLY_TYPE_UNKNOWN;
+	pr_info("register bk_battery\n");
+	#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	psy_cfg.drv_data = bcdev;
 	psy_cfg.of_node = bcdev->dev->of_node;
 	bcdev->psy_list[PSY_TYPE_BATTERY].psy =
@@ -1223,6 +1354,7 @@ static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 		return rc;
 	}
 
+#ifndef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
 	bcdev->psy_list[PSY_TYPE_WLS].psy =
 		devm_power_supply_register(bcdev->dev, &wls_psy_desc, &psy_cfg);
 	if (IS_ERR(bcdev->psy_list[PSY_TYPE_WLS].psy)) {
@@ -1230,7 +1362,7 @@ static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 		pr_err("Failed to register wireless power supply, rc=%d\n", rc);
 		return rc;
 	}
-
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	return 0;
 }
 
@@ -1724,8 +1856,7 @@ static ssize_t moisture_detection_status_show(struct class *c,
 	if (rc < 0)
 		return rc;
 
-	return scnprintf(buf, PAGE_SIZE, "%d\n",
-			pst->prop[USB_MOISTURE_DET_STS]);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", 0);
 }
 static CLASS_ATTR_RO(moisture_detection_status);
 
@@ -1842,6 +1973,19 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 	int i, rc, len;
 	u32 prev, val;
 
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	rc = of_property_read_u32(node, "original-battery",
+		&bcdev->original_battery);
+	if (rc)
+		bcdev->original_battery = 0;
+	pr_info("bk_battery_support:%u\n", bcdev->original_battery);
+
+	rc = of_property_read_u32(node, "need_transfer_vusb",
+		&bcdev->need_transfer_vusb);
+	if (rc)
+		bcdev->need_transfer_vusb = 0;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
+
 	of_property_read_string(node, "qcom,wireless-fw-name",
 				&bcdev->wls_fw_name);
 
@@ -1852,12 +1996,16 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 
 	len = rc;
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+	pst->prop[BATT_CHG_CTRL_LIM_MAX] = 3600000; /* initial BATT_CHG_CTRL_LIM_MAX */
+#else
 	rc = read_property_id(bcdev, pst, BATT_CHG_CTRL_LIM_MAX);
 	if (rc < 0) {
 		pr_err("Failed to read prop BATT_CHG_CTRL_LIM_MAX, rc=%d\n",
 			rc);
 		return rc;
 	}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	prev = pst->prop[BATT_CHG_CTRL_LIM_MAX];
 
@@ -1949,6 +2097,10 @@ static int register_extcon_conn_type(struct battery_chg_dev *bcdev)
 	}
 
 	bcdev->connector_type = pst->prop[USB_CONNECTOR_TYPE];
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	if (pogopin_is_support())
+		bcdev->prev_connector_type = bcdev->connector_type;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	bcdev->usb_prev_mode = EXTCON_NONE;
 
 	bcdev->extcon = devm_extcon_dev_allocate(bcdev->dev,
@@ -1977,11 +2129,366 @@ static int register_extcon_conn_type(struct battery_chg_dev *bcdev)
 	return rc;
 }
 
+#ifdef CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION
+static int bk_is_ready(void *dev_data)
+{
+	struct battery_chg_dev *bcdev = dev_data;
+
+	if (!bcdev)
+		return 0;
+
+	return 1;
+}
+
+static int bk_read_battery_temperature(void *dev_data)
+{
+	int temp = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_TEMP, &temp))
+		return -400; /* -40 degree */
+
+	return temp;
+}
+
+static int bk_is_battery_exist(void *dev_data)
+{
+	int present = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_PRESENT, &present))
+		return -EPERM;
+
+	return present;
+}
+
+static int bk_read_battery_soc(void *dev_data)
+{
+	int soc = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CAPACITY, &soc))
+		return -EPERM;
+
+	return soc;
+}
+
+static int bk_read_battery_vol(void *dev_data)
+{
+	int vol = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_VOLTAGE_NOW, &vol))
+		return -EPERM;
+
+	return vol / POWER_UV_PER_MV;
+}
+
+static int bk_read_battery_current(void *dev_data)
+{
+	int cur = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CURRENT_NOW, &cur)) {
+		pr_err("bk get current failed\n");
+		return 0;
+	}
+
+	return cur;
+}
+
+static int bk_read_battery_avg_current(void *dev_data)
+{
+	int avg = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CURRENT_NOW, &avg))
+		return 0;
+
+	return avg;
+}
+
+static int bk_read_battery_fcc(void *dev_data)
+{
+	int fcc = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CHARGE_FULL, &fcc))
+		return -EPERM;
+
+	return fcc / POWER_UV_PER_MV;
+}
+
+static int bk_read_battery_cycle(void *dev_data)
+{
+	int cycle = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CYCLE_COUNT, &cycle))
+		return -EPERM;
+
+	return cycle;
+}
+
+static int bk_read_battery_rm(void *dev_data)
+{
+	int rm = 0;
+	int cap = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CAPACITY, &cap))
+		return -EPERM;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CHARGE_FULL, &rm))
+		return -EPERM;
+
+	return rm * cap / BATTERY_CHG_FULL_CAP;
+}
+
+static int qplat_fg_read_battery_charge_counter(void *dev_data)
+{
+	int rm = 0;
+	int cap = 0;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CAPACITY, &cap))
+		return -EPERM;
+
+	if (power_supply_get_int_property_value("bk_battery",
+		POWER_SUPPLY_PROP_CHARGE_FULL, &rm))
+		return -EPERM;
+
+	return rm * cap / BATTERY_CHG_FULL_CAP;
+}
+
+static int bk_set_battery_low_voltage(int val, void *dev_data)
+{
+	return 0;
+}
+
+static int bk_set_last_capacity(int capacity, void *dev_data)
+{
+	int ret;
+	struct battery_chg_dev *bcdev = dev_data;
+
+	if (!bcdev || (capacity > BATTERY_CHG_FULL_CAP) || (capacity < 0))
+		return 0;
+
+	ret = power_glink_set_property_value(POWER_GLINK_PROP_ID_LAST_CAP_REG_VALUE, &capacity, GLINK_DATA_ONE);
+	if (ret) {
+		pr_err("failed to set original reg val of last cap\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+static int bk_get_last_capacity(void *dev_data)
+{
+	int ret;
+	int last_cap = 0;
+	int reset_cap = 0;
+	struct battery_chg_dev *bcdev = dev_data;
+	int cap = bk_read_battery_soc(dev_data);
+
+	if (!bcdev)
+		return last_cap;
+
+	ret = power_glink_get_property_value(POWER_GLINK_PROP_ID_LAST_CAP_REG_VALUE, &last_cap, GLINK_DATA_ONE);
+	if (ret) {
+		pr_err("failed to get original reg val of last cap\n");
+		return cap;
+	}
+
+	if ((last_cap <= 0) || (cap <= 0))
+		return cap;
+
+	if (abs(last_cap - cap) >= BATTERY_CHG_CAPACITY_TH)
+		return cap;
+
+	ret = power_glink_set_property_value(POWER_GLINK_PROP_ID_LAST_CAP_REG_VALUE, &reset_cap, GLINK_DATA_ONE);
+	if (ret) {
+		pr_err("failed to reset last cap\n");
+		return cap;
+	}
+
+	return last_cap;
+}
+
+static int bk_set_vterm_dec(int vterm, void *dev_data)
+{
+	return 0;
+}
+
+static const char *bk_get_coul_model(void *dev_data)
+{
+	return "bkxxx";
+}
+
+static struct coul_interface_ops bk_battery_ops = {
+	.type_name = "main",
+	.is_coul_ready = bk_is_ready,
+	.is_battery_exist = bk_is_battery_exist,
+	.get_battery_capacity = bk_read_battery_soc,
+	.get_battery_voltage = bk_read_battery_vol,
+	.get_battery_current = bk_read_battery_current,
+	.get_battery_avg_current = bk_read_battery_avg_current,
+	.get_battery_temperature = bk_read_battery_temperature,
+	.get_battery_fcc = bk_read_battery_fcc,
+	.get_battery_cycle = bk_read_battery_cycle,
+	.set_battery_low_voltage = bk_set_battery_low_voltage,
+	.set_battery_last_capacity = bk_set_last_capacity,
+	.get_battery_last_capacity = bk_get_last_capacity,
+	.get_battery_rm = bk_read_battery_rm,
+	.get_battery_charge_counter = qplat_fg_read_battery_charge_counter,
+	.set_vterm_dec = bk_set_vterm_dec,
+	.get_coul_model = bk_get_coul_model,
+};
+
+static int bk_get_calibration_curr(int *val, void *dev_data)
+{
+	struct battery_chg_dev *bcdev = dev_data;
+
+	if (!bcdev || !val) {
+		pr_err("bcdev or val is null\n");
+		return -EPERM;
+	}
+
+	*val = bk_read_battery_current(bcdev);
+
+	return 0;
+}
+
+static int bk_get_calibration_vol(int *val, void *dev_data)
+{
+	struct battery_chg_dev *bcdev = dev_data;
+	int vol;
+
+	if (!bcdev || !val) {
+		pr_err("bcdev or val is null\n");
+		return -EPERM;
+	}
+
+	vol = bk_read_battery_vol(bcdev);
+	if (vol < 0)
+		return vol;
+
+	*val = vol * POWER_UV_PER_MV;
+
+	return 0;
+}
+
+static unsigned int bk_get_curr_cali_reg_val(unsigned int K_reg, unsigned int val)
+{
+	long long k_actual = K_reg;
+	long long curr_gain = val;
+	long long k_actual_comp;
+	unsigned int k_reg_val;
+
+	k_actual -= (POWER_U16_MAX + 1);
+	k_actual_comp = k_actual * curr_gain / BATTERY_CHG_DEFAULT_CURR_GAIN;
+	k_actual_comp += (POWER_U16_MAX + 1);
+	k_reg_val = k_actual_comp;
+	pr_info("k_reg_val: %u k_actual_comp: %d curr_gain:%d\n",
+		k_reg_val, k_actual_comp, curr_gain);
+
+	return k_reg_val;
+}
+
+static int bk_set_current_gain(unsigned int val, void *dev_data)
+{
+	struct battery_chg_dev *bcdev = dev_data;
+	int ret = 0;
+	unsigned int K_reg;
+	unsigned int K_reg_o;
+
+	if (val == 0) {
+		pr_err("invalid val of current gain\n");
+		return ret;
+	}
+
+	if (!bcdev) {
+		pr_err("bcdev or val is null\n");
+		return -EPERM;
+	}
+
+	ret = power_nv_read(POWER_NV_QCOUL, g_bk_battery_qcoul_data, sizeof(g_bk_battery_qcoul_data));
+	if (ret) {
+		pr_err("power_nv_read fail\n");
+		return ret;
+	}
+
+	K_reg_o = g_bk_battery_qcoul_data[BK_BATTERY_QCOUL_CURR_CALI_REGISTER];
+	if (K_reg_o == 0) {
+		ret = power_glink_get_property_value(POWER_GLINK_PROP_ID_CURR_CALI, &K_reg_o, 1);
+		if (ret) {
+			pr_err("power_glink_get_property_value fail\n");
+			return ret;
+		}
+	}
+
+	K_reg = bk_get_curr_cali_reg_val(K_reg_o, val);
+
+	ret = power_glink_set_property_value(POWER_GLINK_PROP_ID_CURR_CALI, &K_reg, 1);
+	if (ret) {
+		pr_err("power_glink_set_property_value fail\n");
+		return ret;
+	}
+
+	g_bk_battery_qcoul_data[BK_BATTERY_QCOUL_CURR_CALI_REGISTER] = K_reg_o;
+	ret = power_nv_write(POWER_NV_QCOUL, g_bk_battery_qcoul_data, sizeof(g_bk_battery_qcoul_data));
+
+	return ret;
+}
+
+static int bk_set_voltage_gain(unsigned int val, void *dev_data)
+{
+	return 0;
+}
+
+static int bk_enable_cali_mode(int enable, void *dev_data)
+{
+	return 0;
+}
+
+static struct coul_cali_ops bk_cali_ops = {
+	.dev_name = "aux",
+	.get_current = bk_get_calibration_curr,
+	.get_voltage = bk_get_calibration_vol,
+	.set_current_gain = bk_set_current_gain,
+	.set_voltage_gain = bk_set_voltage_gain,
+	.set_cali_mode = bk_enable_cali_mode,
+};
+
+static void bk_cali_init(void)
+{
+	unsigned int val_reg;
+	unsigned int K_reg;
+	unsigned int curr_gain = 0;
+
+	coul_cali_get_para(COUL_CALI_MODE_AUX, COUL_CALI_PARA_CUR_A, &curr_gain);
+	power_nv_read(POWER_NV_QCOUL, g_bk_battery_qcoul_data, sizeof(g_bk_battery_qcoul_data));
+	K_reg = g_bk_battery_qcoul_data[BK_BATTERY_QCOUL_CURR_CALI_REGISTER];
+	pr_info("curr_gain: %u K_reg: %u", curr_gain, K_reg);
+	if ((curr_gain == 0) || (K_reg == 0))
+		return;
+
+	val_reg = bk_get_curr_cali_reg_val(K_reg, curr_gain);
+
+	if (power_glink_set_property_value(POWER_GLINK_PROP_ID_CURR_CALI, &val_reg, 1))
+		pr_err("fail to set original reg val of curr cali\n");
+}
+#endif
+
 static int battery_chg_probe(struct platform_device *pdev)
 {
 	struct battery_chg_dev *bcdev;
 	struct device *dev = &pdev->dev;
 	struct pmic_glink_client_data client_data = { };
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	struct power_devices_info_data *power_dev_info = NULL;
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 	int rc, i;
 
 	bcdev = devm_kzalloc(&pdev->dev, sizeof(*bcdev), GFP_KERNEL);
@@ -2037,6 +2544,7 @@ static int battery_chg_probe(struct platform_device *pdev)
 				rc);
 		return rc;
 	}
+	pr_err("%s glink register ok\n", __func__);
 
 	bcdev->initialized = true;
 	bcdev->reboot_notifier.notifier_call = battery_chg_ship_mode;
@@ -2081,6 +2589,27 @@ static int battery_chg_probe(struct platform_device *pdev)
 	}
 
 	schedule_work(&bcdev->usb_type_work);
+	pr_err("%s ok\n", __func__);
+
+#if defined(CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION)
+	if (bcdev->original_battery == 1) {
+#ifdef CONFIG_HUAWEI_HW_DEV_DCT
+		set_hw_dev_flag(DEV_I2C_GAUGE_IC);
+#endif /* CONFIG_HUAWEI_HW_DEV_DCT */
+		(void)bat_model_name();
+		bk_cali_init();
+		bk_battery_ops.dev_data = (void *)bcdev;
+		coul_interface_ops_register(&bk_battery_ops);
+		bk_cali_ops.dev_data = (void *)bcdev;
+		coul_cali_ops_register(&bk_cali_ops);
+		power_dev_info = power_devices_info_register();
+		if (power_dev_info) {
+			power_dev_info->dev_name = bcdev->dev->driver->name;
+			power_dev_info->dev_id = 0;
+			power_dev_info->ver_id = 0;
+		}
+	}
+#endif /* CONFIG_HUAWEI_POWER_EMBEDDED_ISOLATION */
 
 	return 0;
 error:

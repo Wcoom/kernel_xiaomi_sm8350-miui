@@ -23,7 +23,11 @@
 #include <linux/sched/sysctl.h>
 
 #include <trace/events/sched.h>
-#include <linux/sched/sysctl.h>
+#include <platform/trace/hooks/hungtask.h>
+
+#define HEARTBEAT_TIME 3
+
+static bool mod_installed;
 
 /*
  * The number of tasks checked:
@@ -86,13 +90,25 @@ static int
 hung_task_panic(struct notifier_block *this, unsigned long event, void *ptr)
 {
 	did_panic = 1;
-
+	trace_set_did_panic(did_panic);
 	return NOTIFY_DONE;
 }
 
 static struct notifier_block panic_block = {
 	.notifier_call = hung_task_panic,
 };
+
+unsigned long hungtask_get_timeout(void)
+{
+	return sysctl_hung_task_timeout_secs;
+}
+EXPORT_SYMBOL(hungtask_get_timeout);
+
+unsigned int hungtask_get_panic(void)
+{
+	return sysctl_hung_task_panic;
+}
+EXPORT_SYMBOL(hungtask_get_panic);
 
 static void check_hung_task(struct task_struct *t, unsigned long timeout)
 {
@@ -103,7 +119,7 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 	 * Also, skip vfork and any other user process that freezer should skip.
 	 */
 	if (unlikely(t->flags & (PF_FROZEN | PF_FREEZER_SKIP)))
-	    return;
+		return;
 
 	/*
 	 * When a freshly created task is scheduled once, changes its state to
@@ -242,6 +258,7 @@ int proc_dohung_task_timeout_secs(struct ctl_table *table, int write,
 		goto out;
 
 	wake_up_process(watchdog_task);
+	trace_set_timeout_secs(sysctl_hung_task_timeout_secs);
 
  out:
 	return ret;
@@ -293,12 +310,17 @@ static int watchdog(void *dummy)
 
 		if (interval == 0)
 			interval = timeout;
-		interval = min_t(unsigned long, interval, timeout);
-		t = hung_timeout_jiffies(hung_last_checked, interval);
+		timeout = min_t(unsigned long, interval, timeout);
+		if (mod_installed)
+			timeout = HEARTBEAT_TIME;
+		t = hung_timeout_jiffies(hung_last_checked, timeout);
 		if (t <= 0) {
 			if (!atomic_xchg(&reset_hung_task, 0) &&
-			    !hung_detector_suspended)
-				check_hung_uninterruptible_tasks(timeout);
+			    !hung_detector_suspended) {
+				trace_check_tasks(timeout);
+				if (!mod_installed)
+					check_hung_uninterruptible_tasks(timeout);
+			}
 			hung_last_checked = jiffies;
 			continue;
 		}
@@ -306,6 +328,16 @@ static int watchdog(void *dummy)
 	}
 
 	return 0;
+}
+
+void hungtask_insmod(void)
+{
+	mod_installed = true;
+}
+
+void hungtask_rmmod(void)
+{
+	mod_installed = false;
 }
 
 static int __init hung_task_init(void)

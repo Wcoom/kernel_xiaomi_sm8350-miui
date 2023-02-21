@@ -1,0 +1,10 @@
+&huawei_wifi_info{
+    compatible = "huawei,hw_wifi_info";
+    status = "ok";
+    wifi,pubfile_id = "palau_al00_va";
+    wifi,chiptype = "WIFI_QUALCOMM_WCN6851";
+};
+
+&hisi_cust_cfg {
+    ini_file_name = "/vendor/etc/cfg_udp_1102a_pilot.ini";
+};

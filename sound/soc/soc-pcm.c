@@ -27,6 +27,7 @@
 #include <sound/soc.h>
 #include <sound/soc-dpcm.h>
 #include <sound/initval.h>
+#include <trace/audio_trace.h>
 
 #define DPCM_MAX_BE_USERS	8
 
@@ -629,7 +630,8 @@ static int soc_pcm_open(struct snd_pcm_substream *substream)
 		 runtime->hw.rate_max);
 
 dynamic:
-
+	atrace_report(rtd->dev, PCM_TRACE_OPEN, &substream->stream,
+		sizeof(substream->stream));
 	snd_soc_runtime_activate(rtd, substream->stream);
 
 	mutex_unlock(&rtd->card->pcm_mutex);
@@ -782,6 +784,7 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 	if (!cpu_dai->active)
 		pinctrl_pm_select_sleep_state(cpu_dai->dev);
 
+	atrace_report(rtd->dev, PCM_TRACE_CLOSE, NULL, 0);
 	return 0;
 }
 

@@ -1470,7 +1470,7 @@ retry:
 	f = list_first_entry(&q->sched_list, struct cvp_fence_command, list);
 
 	/* Wait for all normal frames to finish before return */
-	if ((f && f->mode == OP_FLUSH) ||
+	if ((!list_empty(&q->sched_list) && f && f->mode == OP_FLUSH) ||
 		(list_empty(&q->sched_list) && list_empty(&q->wait_list))) {
 		mutex_unlock(&q->lock);
 		return rc;

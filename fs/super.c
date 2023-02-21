@@ -475,6 +475,8 @@ void generic_shutdown_super(struct super_block *sb)
 	spin_unlock(&sb_lock);
 	up_write(&sb->s_umount);
 	if (sb->s_bdi != &noop_backing_dev_info) {
+		if (sb->s_iflags & SB_I_PERSB_BDI)
+			bdi_unregister(sb->s_bdi);
 		bdi_put(sb->s_bdi);
 		sb->s_bdi = &noop_backing_dev_info;
 	}
@@ -1440,7 +1442,13 @@ void kill_block_super(struct super_block *sb)
 	struct block_device *bdev = sb->s_bdev;
 	fmode_t mode = sb->s_mode;
 
+#ifdef CONFIG_F2FS_CHECK_FS
+	spin_lock(&bdev_access_info.lock);
 	bdev->bd_super = NULL;
+	spin_unlock(&bdev_access_info.lock);
+#else
+	bdev->bd_super = NULL;
+#endif
 	generic_shutdown_super(sb);
 	sync_blockdev(bdev);
 	WARN_ON_ONCE(!(mode & FMODE_EXCL));
@@ -1613,6 +1621,7 @@ int super_setup_bdi_name(struct super_block *sb, char *fmt, ...)
 	}
 	WARN_ON(sb->s_bdi != &noop_backing_dev_info);
 	sb->s_bdi = bdi;
+	sb->s_iflags |= SB_I_PERSB_BDI;
 
 	return 0;
 }
@@ -1650,7 +1659,7 @@ int __sb_start_write(struct super_block *sb, int level, bool wait)
 	if (!wait)
 		return percpu_down_read_trylock(sb->s_writers.rw_sem + level-1);
 
-	percpu_down_read(sb->s_writers.rw_sem + level-1);
+		percpu_down_read(sb->s_writers.rw_sem + level-1);
 	return 1;
 }
 EXPORT_SYMBOL(__sb_start_write);

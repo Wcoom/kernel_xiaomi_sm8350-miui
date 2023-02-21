@@ -9,10 +9,12 @@
 #include <linux/slab.h>
 #include <linux/swap.h>
 #include <linux/sched/signal.h>
+#include <linux/ion.h>
 
 #include "msm_ion_priv.h"
 #include "ion_msm_page_pool.h"
 
+static atomic_long_t ion_total_cache = ATOMIC_INIT(0);
 static inline struct page
 *ion_msm_page_pool_alloc_pages(struct ion_msm_page_pool *pool)
 {
@@ -42,6 +44,7 @@ static void ion_msm_page_pool_add(struct ion_msm_page_pool *pool,
 	atomic_inc(&pool->count);
 	mod_node_page_state(page_pgdat(page), NR_KERNEL_MISC_RECLAIMABLE,
 			    (1 << pool->order));
+	atomic_long_add((1 << pool->order), &ion_total_cache);
 	mutex_unlock(&pool->mutex);
 }
 
@@ -123,6 +126,7 @@ static struct page *ion_msm_page_pool_remove(struct ion_msm_page_pool *pool,
 	list_del(&page->lru);
 	mod_node_page_state(page_pgdat(page), NR_KERNEL_MISC_RECLAIMABLE,
 					-(1 << pool->order));
+	atomic_long_sub((1 << pool->order), &ion_total_cache);
 	return page;
 }
 
@@ -254,4 +258,9 @@ struct ion_msm_page_pool *ion_msm_page_pool_create(gfp_t gfp_mask,
 void ion_msm_page_pool_destroy(struct ion_msm_page_pool *pool)
 {
 	kfree(pool);
+}
+
+u64 ion_get_total_cache(void)
+{
+	return atomic_long_read(&ion_total_cache);
 }

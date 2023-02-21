@@ -41,7 +41,9 @@
 
 #include "scsi_priv.h"
 #include "scsi_logging.h"
-
+#ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
+#include <linux/iomt_host/dsm_iomt_ufs_host.h>
+#endif
 
 static int shost_eh_deadline = -1;
 
@@ -173,7 +175,6 @@ void scsi_remove_host(struct Scsi_Host *shost)
 			return;
 		}
 	spin_unlock_irqrestore(shost->host_lock, flags);
-
 	scsi_autopm_get_host(shost);
 	flush_workqueue(shost->tmf_work_q);
 	scsi_forget_host(shost);
@@ -378,6 +379,9 @@ struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *sht, int privsize)
 	if (!shost)
 		return NULL;
 
+#ifdef CONFIG_HUAWEI_DSM_IOMT_UFS_HOST
+	shost->iomt_host_info = NULL;
+#endif
 	shost->host_lock = &shost->default_lock;
 	spin_lock_init(shost->host_lock);
 	shost->shost_state = SHOST_CREATED;

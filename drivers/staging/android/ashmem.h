@@ -21,4 +21,11 @@
 #define COMPAT_ASHMEM_SET_PROT_MASK	_IOW(__ASHMEMIOC, 5, unsigned int)
 #endif
 
+bool is_ashmem(struct file *f);
+size_t get_ashmem_size_by_file(struct file *f);
+char* get_ashmem_name_by_file(struct file *f);
+u64 ashmem_get_total_size(void);
+void ashmem_mutex_lock(void);
+void ashmem_mutex_unlock(void);
+
 #endif	/* _LINUX_ASHMEM_H */

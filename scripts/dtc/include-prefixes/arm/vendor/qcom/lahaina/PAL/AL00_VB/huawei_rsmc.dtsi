@@ -1,0 +1,35 @@
+&soc {
+	spi@894000 {
+		status = "ok";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		qcom,rt = <1>;
+		qcom,disable-dma = <1>;
+		huawei_rsmc@10 {
+			compatible = "huawei,rsmc";
+			status = "ok";
+			/* SPI Config */
+			spi-max-frequency = <9000000>;
+			spi-bus-id = <19>;
+			spi-mode = <0>;
+			bits-per-word = <16>;
+			reg = <0>;
+			/* Timing */
+			/* GPIO Config */
+			pwr_gpio = <&extgpio 9 0>;
+			init_gpio = <&extgpio 8 0>;
+			// rst_gpio = <>;
+			cs_gpio = <&tlmm 79 0x00>;
+			pa_gpio = <&extgpio 11 0>;
+			rx_ant_gpio = <&tlmm 165 0x00>;
+			tx_ant_gpio = <&tlmm 166 0x00>;
+			/* Feature Config */
+		};
+	};
+};
+
+&huawei_rsmc {
+	compatible = "huawei_rsmc";
+	rsmc_enable;
+	config_name = "default";
+};

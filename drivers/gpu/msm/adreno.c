@@ -553,6 +553,7 @@ void adreno_hang_int_callback(struct adreno_device *adreno_dev, int bit)
 	adreno_irqctrl(adreno_dev, 0);
 
 	/* Trigger a fault in the dispatcher - this will effect a restart */
+	report_gpu_dmd_inirq(ADRENO_HARD_FAULT, "adreno_irqctrl2");
 	adreno_set_gpu_fault(adreno_dev, ADRENO_HARD_FAULT);
 	adreno_dispatcher_schedule(KGSL_DEVICE(adreno_dev));
 }

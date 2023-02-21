@@ -1,0 +1,44 @@
+#include "camera-sensor-v2b.dtsi"
+
+&cam_cci1 {
+
+	qcom,cam-sensor1 { /* front */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed3 = <3>;
+		gpio-custom1 = <4>;
+		gpio-mixed2 = <5>; /* not use */
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK3",
+					"CAM_RESET1",
+					"CAM_mixed1",
+					"CAM_mixed3",
+					"CAM_CUSTOM1";
+	};
+
+	qcom,cam-sensor7 { /* front swing */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+		gpio-reset = <1>;
+		gpio-mixed1 = <2>;
+		gpio-mixed3 = <3>;
+		gpio-custom1 = <4>;
+		gpio-mixed2 = <5>; /* not use */
+		gpio-req-tbl-num = <0 1 2 3 4>;
+		gpio-req-tbl-flags = <1 0 0 0 0>;
+		gpio-req-tbl-label = "CAMIF_MCLK3",
+					"CAM_RESET1",
+					"CAM_mixed1",
+					"CAM_mixed3",
+					"CAM_CUSTOM1";
+	};
+};

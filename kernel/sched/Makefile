@@ -16,6 +16,8 @@ ifneq ($(CONFIG_SCHED_OMIT_FRAME_POINTER),y)
 CFLAGS_core.o := $(PROFILING) -fno-omit-frame-pointer
 endif
 
+LINUXINCLUDE    += -I$(srctree)/../../vendor/huawei/kernel/kernel/sched/hw_rtg/include
+
 obj-y += core.o loadavg.o clock.o cputime.o
 obj-y += idle.o fair.o rt.o deadline.o
 obj-y += wait.o wait_bit.o swait.o completion.o
@@ -31,3 +33,6 @@ obj-$(CONFIG_CPU_FREQ_GOV_SCHEDUTIL) += cpufreq_schedutil.o
 obj-$(CONFIG_MEMBARRIER) += membarrier.o
 obj-$(CONFIG_CPU_ISOLATION) += isolation.o
 obj-$(CONFIG_PSI) += psi.o
+obj-y += hw_graded_sched/
+obj-$(CONFIG_HW_RTG) += hw_rtg/
+obj-$(CONFIG_SCHED_PERF_CTRL) += sched_perf_ctrl.o

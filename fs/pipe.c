@@ -1072,8 +1072,13 @@ static long pipe_set_size(struct pipe_inode_info *pipe, unsigned long arg)
 	 * if the user is currently over a limit.
 	 */
 	if (nr_pages > pipe->buffers &&
-			size > pipe_max_size && !capable(CAP_SYS_RESOURCE))
+			size > pipe_max_size && !capable(CAP_SYS_RESOURCE)) {
+		printk(KERN_ERR
+		       "%s: ret EPERM, nr_pages %u, buffers %u,"
+		       "size %u, pipe_max_size %u\n",
+		       __func__, nr_pages, pipe->buffers, size, pipe_max_size);
 		return -EPERM;
+	}
 
 	user_bufs = account_pipe_buffers(pipe->user, pipe->buffers, nr_pages);
 
@@ -1081,6 +1086,12 @@ static long pipe_set_size(struct pipe_inode_info *pipe, unsigned long arg)
 			(too_many_pipe_buffers_hard(user_bufs) ||
 			 too_many_pipe_buffers_soft(user_bufs)) &&
 			is_unprivileged_user()) {
+		printk(KERN_ERR
+		       "%s: ret EPERM, nr_pages %u, buffers %u,"
+		       "user_bufs %lu, pages_hard %lu, pages_soft %lu\n",
+		       __func__, nr_pages, pipe->buffers, user_bufs,
+		       READ_ONCE(pipe_user_pages_hard),
+		       READ_ONCE(pipe_user_pages_soft));
 		ret = -EPERM;
 		goto out_revert_acct;
 	}

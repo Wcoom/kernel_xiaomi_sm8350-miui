@@ -1,0 +1,27 @@
+&pm7325_gpios {
+	pm7325_btb_int {
+		btb_int_active: btb_int_active {
+			pins = "gpio8";
+			function = "normal";
+			bias-disable;
+			input-enable;
+			power-source = <0>;
+		};
+	};
+};
+
+&soc {
+	card_tray_detect: card_tray_detect {
+		compatible = "huawei,card_tray_detect";
+		card_tray_gpio = <452>;
+		btb_60pin_gpio = <329>;
+		pinctrl-names = "btb_default";
+		pinctrl-0 = <&btb_int_active>;
+	};
+};
+
+&gpio_check {
+	/* 329 : GPIO8, tlmm BASE = 322 */
+	buckle_num = "329";
+	buckle_val = "0";
+};

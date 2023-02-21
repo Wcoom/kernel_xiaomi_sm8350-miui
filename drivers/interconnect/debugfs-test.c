@@ -24,9 +24,63 @@ static struct dentry *debugfs_dir;
 static struct icc_path *path;
 static u32 src_port;
 static u32 dst_port;
-
 static u32 avg_bw;
 static u32 peak_bw;
+
+#ifdef CONFIG_CX_POWER_OPTIMIZE
+#include <linux/seq_file.h>
+#include <linux/proc_fs.h>
+#include <linux/fs.h>
+
+extern unsigned int enable_cx_decrease;
+#define MLEVEL_BW_UTILIZATION 1
+#define HLEVEL_BW_UTILIZATION 2
+static unsigned long enable_bw = 0;
+
+static ssize_t bw_proc_write(struct file *file, char const __user *buf,
+			    size_t count, loff_t *ppos)
+{
+	int ret;
+
+	ret = kstrtoul_from_user(buf, count, 10, &enable_bw);
+	pr_err("[bw_write] enable_bw = %lu \n", enable_bw);
+
+	if (ret)
+		return ret;
+
+	if (enable_bw == MLEVEL_BW_UTILIZATION)
+		enable_cx_decrease = MLEVEL_BW_UTILIZATION;
+	else if (enable_bw == HLEVEL_BW_UTILIZATION)
+		enable_cx_decrease = HLEVEL_BW_UTILIZATION;
+	else
+		enable_cx_decrease = 0;
+
+	*ppos += count;
+
+	return count;
+}
+
+static int bw_proc_show(struct seq_file *m, void *v)
+{
+	seq_printf(m,"%d\n",enable_bw);
+	return 0;
+}
+
+static int bw_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, bw_proc_show, NULL);
+}
+
+static const struct file_operations bw_opt_fops = {
+	.owner = THIS_MODULE,
+	.open = bw_proc_open,
+	.write = bw_proc_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+#endif
 
 static ssize_t get_write_op(struct file *file, char const __user *buf,
 			    size_t count, loff_t *ppos)
@@ -104,6 +158,11 @@ static int __init icc_test_init(void)
 	debugfs_create_u32("avg_bw", 0600, debugfs_dir, &avg_bw);
 	debugfs_create_u32("peak_bw", 0600, debugfs_dir, &peak_bw);
 	debugfs_create_file("commit", 0200, debugfs_dir, NULL, &commit_fops);
+
+#ifdef CONFIG_CX_POWER_OPTIMIZE
+	if (!proc_create("enable_bw_optimize", 0644, NULL, &bw_opt_fops))
+		pr_err("proc/enable_bw_optimize create fail\n");
+#endif
 
 	return 0;
 }

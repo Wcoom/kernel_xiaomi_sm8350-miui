@@ -1,0 +1,36 @@
+#include "camera-sensor-v1e.dtsi"
+
+&cam_cci1 {
+
+	qcom,cam-sensor3 { /* tele */
+		pinctrl-0 = <&cam_sensor_mclk2_active
+				&cam_sensor_active_rst3>;
+		pinctrl-1 = <&cam_sensor_mclk2_suspend
+				&cam_sensor_suspend_rst3>;
+		gpios = <&tlmm 102 0>, /* mclk */
+			<&tlmm 117 0>, /* rst */
+			<&tlmm 25 0>, /* iovdd */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 37 0>, /* dvdd */
+			<&tlmm 74 0>, /* afvdd */
+			<&tlmm 84 0>; /* drvdd */
+	};
+
+	qcom,cam-sensor1 { /* front */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 74 0>, /* avdd1 */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+	};
+
+	qcom,cam-sensor7 { /* front swing */
+		gpios = <&tlmm 103 0>, /* mclk */
+			<&tlmm 17 0>, /* rst */
+			<&tlmm 9 0>, /* avdd */
+			<&tlmm 74 0>, /* avdd1 */
+			<&tlmm 128 0>, /* dvdd */
+			<&tlmm 72 0>;  /* ponv */
+	};
+};

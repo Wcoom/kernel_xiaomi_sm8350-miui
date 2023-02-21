@@ -364,6 +364,11 @@ static int spi_gpio_probe(struct platform_device *pdev)
 	master = devm_spi_alloc_master(dev, sizeof(*spi_gpio));
 	if (!master)
 		return -ENOMEM;
+	status = devm_add_action_or_reset(&pdev->dev, spi_gpio_put, master);
+	if (status) {
+		spi_master_put(master);
+		return status;
+	}
 
 	if (of_id)
 		status = spi_gpio_probe_dt(pdev, master);

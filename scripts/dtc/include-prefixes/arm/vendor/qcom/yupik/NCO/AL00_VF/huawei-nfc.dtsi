@@ -1,0 +1,21 @@
+&qupv3_se9_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	nfc@28 {
+		compatible = "qcom,nq-thn31";
+		status = "ok";
+		reg = <0x28>;
+		tms,nfc_int = <&tlmm 41 0x00>;
+		tms,nfc_ven = <&tlmm 38 0x00>;
+		tms,nfc_firm = <&tlmm 40 0x00>;
+		nfc_tms_conf_name = "libnfc-tms-thn31.conf";
+		nfc_brcm_conf_name = "libnfc-brcm-thn31.conf";
+		nfc_card_num = <0x2>;
+		nfc_chip_type = "nfc_bj";
+		nfc_single_channel = "false";
+		nfc_ese_type = "thd89";
+		xbjt_nfc_qcom_activated = <0x1>;
+	};
+};

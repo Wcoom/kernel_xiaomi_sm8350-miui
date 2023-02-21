@@ -3,6 +3,8 @@
 # Makefile for the Linux proc filesystem routines.
 #
 
+LINUXINCLUDE	+= -I$(srctree)/../../vendor/huawei/kernel/kernel/sched/hw_rtg/include
+
 obj-y   += proc.o
 
 CFLAGS_task_mmu.o	+= $(call cc-option,-Wno-override-init,)
@@ -27,9 +29,20 @@ proc-y	+= softirqs.o
 proc-y	+= namespaces.o
 proc-y	+= self.o
 proc-y	+= thread_self.o
+proc-$(CONFIG_APP_INFO)	+= manufacture_app_info.o
+proc-$(CONFIG_DDR_INFO)	+= ddr_info.o
 proc-$(CONFIG_PROC_SYSCTL)	+= proc_sysctl.o
 proc-$(CONFIG_NET)		+= proc_net.o
 proc-$(CONFIG_PROC_KCORE)	+= kcore.o
 proc-$(CONFIG_PROC_VMCORE)	+= vmcore.o
 proc-$(CONFIG_PRINTK)	+= kmsg.o
 proc-$(CONFIG_PROC_PAGE_MONITOR)	+= page.o
+proc-$(CONFIG_HW_VIP_THREAD)	+= hwioinfo.o
+obj-$(CONFIG_HW_LOWMEM_DBG) += lmkd_dbg_trigger.o
+proc-$(CONFIG_HUAWEI_PROC_MEMORYINFO_FAST) += meminfo_lite.o
+proc-$(CONFIG_HUAWEI_SWAP_ZDATA)	 += process_reclaim_info.o
+proc-$(CONFIG_TASK_PROTECT_LRU)	 += protect_lru.o
+proc-$(CONFIG_MEMCG_PROTECT_LRU) += protect_lru.o
+proc-$(CONFIG_HW_SENSOR_INFO) += hw_sensor_info.o
+proc-$(CONFIG_SMARTGC_MEMSCENE)	+= memstatscene.o
+obj-$(CONFIG_HUAWEI_PERFD) += perflogd.o

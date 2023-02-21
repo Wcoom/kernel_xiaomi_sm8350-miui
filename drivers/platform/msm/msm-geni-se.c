@@ -18,6 +18,10 @@
 #include <linux/spinlock.h>
 #include <linux/pinctrl/consumer.h>
 
+#ifdef CONFIG_BLACKBOX
+#include <platform/linux/rainbow.h>
+#endif
+
 #define GENI_SE_IOMMU_VA_START	(0x40000000)
 #define GENI_SE_IOMMU_VA_SIZE	(0xC0000000)
 
@@ -111,6 +115,10 @@ struct geni_se_device {
 #define HW_VER_MINOR_MASK GENMASK(27, 16)
 #define HW_VER_MINOR_SHFT 16
 #define HW_VER_STEP_MASK GENMASK(15, 0)
+
+#ifdef CONFIG_DFX_RAINBOW_HIMNTN
+bool himntn_switch;
+#endif
 
 /**
  * geni_read_reg_nolog() - Helper function to read from a GENI register
@@ -1773,22 +1781,22 @@ static int geni_se_probe(struct platform_device *pdev)
 	 * console UART as dummy consumer of ICC to get rid of this HACK
 	 */
 #if IS_ENABLED(CONFIG_SERIAL_MSM_GENI_CONSOLE)
-	geni_se_dev->wrapper_rsc.wrapper_dev = dev;
-	geni_se_dev->wrapper_rsc.ctrl_dev = dev;
+	if (himntn_switch) {
+		geni_se_dev->wrapper_rsc.wrapper_dev = dev;
+		geni_se_dev->wrapper_rsc.ctrl_dev = dev;
 
-	ret = geni_se_resources_init(&geni_se_dev->wrapper_rsc,
-					UART_CONSOLE_CORE2X_VOTE,
-					(DEFAULT_SE_CLK * DEFAULT_BUS_WIDTH));
-	if (ret) {
-		dev_err(dev, "Resources init failed: %d\n", ret);
-		return ret;
-	}
+		ret = geni_se_resources_init(&geni_se_dev->wrapper_rsc,	UART_CONSOLE_CORE2X_VOTE,
+					     (DEFAULT_SE_CLK * DEFAULT_BUS_WIDTH));
+		if (ret) {
+			dev_err(dev, "Resources init failed: %d\n", ret);
+			return ret;
+		}
 
-	ret = geni_se_add_ab_ib(geni_se_dev, &geni_se_dev->wrapper_rsc);
-	if (ret) {
-		dev_err(dev, "%s: Error %d during bus_bw_update\n", __func__,
-				ret);
-		return ret;
+		ret = geni_se_add_ab_ib(geni_se_dev, &geni_se_dev->wrapper_rsc);
+		if (ret) {
+			dev_err(dev, "%s: Error %d during bus_bw_update\n", __func__, ret);
+			return ret;
+		}
 	}
 #endif
 
@@ -1799,8 +1807,7 @@ static int geni_se_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	GENI_SE_DBG(geni_se_dev->log_ctx, false, NULL,
-		    "%s: Probe successful\n", __func__);
+	GENI_SE_DBG(geni_se_dev->log_ctx, false, NULL, "%s: Probe successful\n", __func__);
 	return 0;
 }
 
@@ -1824,6 +1831,9 @@ static struct platform_driver geni_se_driver = {
 
 static int __init geni_se_driver_init(void)
 {
+#ifdef CONFIG_DFX_RAINBOW_HIMNTN
+	cmd_himntn_item_switch(HIMNTN_ID_UART_LOG_SWITCH, &himntn_switch);
+#endif
 	return platform_driver_register(&geni_se_driver);
 }
 arch_initcall(geni_se_driver_init);
