@@ -55,6 +55,8 @@
 #include <asm/pointer_auth.h>
 #include <asm/scs.h>
 #include <asm/stacktrace.h>
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
 #include <trace/hooks/minidump.h>
 
 #if defined(CONFIG_STACKPROTECTOR) && !defined(CONFIG_STACKPROTECTOR_PER_TASK)
@@ -62,6 +64,8 @@
 unsigned long __stack_chk_guard __read_mostly;
 EXPORT_SYMBOL(__stack_chk_guard);
 #endif
+
+DEFINE_TRACE(rb_kallsyms_set);
 
 /*
  * Function pointers to optional machine specific functions
@@ -254,6 +258,9 @@ void __show_regs(struct pt_regs *regs)
 {
 	int i, top_reg;
 	u64 lr, sp;
+	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
+	char kallsyms_buffer[KSYM_SYMBOL_LEN] = {0};
+	int err;
 
 	if (compat_user_mode(regs)) {
 		lr = regs->compat_lr;
@@ -267,6 +274,13 @@ void __show_regs(struct pt_regs *regs)
 
 	trace_android_vh_show_regs(regs);
 	show_regs_print_info(KERN_DEFAULT);
+
+	sprint_symbol(kallsyms_buffer,
+		(unsigned long)__builtin_extract_return_addr((void *)instruction_pointer(regs)));
+	err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "PC %s", kallsyms_buffer);
+	if (err >= 0)
+		trace_rb_kallsyms_set(attach_info_buffer);
+
 	print_pstate(regs);
 
 	if (!user_mode(regs)) {
@@ -701,3 +715,5 @@ asmlinkage void __sched arm64_preempt_schedule_irq(void)
 	if (static_branch_likely(&arm64_const_caps_ready))
 		preempt_schedule_irq();
 }
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_kallsyms_set);

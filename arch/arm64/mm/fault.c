@@ -42,6 +42,8 @@
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
+#include <platform/trace/events/rainbow.h>
+#include <platform/linux/rainbow.h>
 
 struct fault_info {
 	int	(*fn)(unsigned long addr, unsigned int esr,
@@ -50,6 +52,8 @@ struct fault_info {
 	int	code;
 	const char *name;
 };
+
+DEFINE_TRACE(rb_attach_info_set);
 
 static const struct fault_info fault_info[];
 static struct fault_info debug_fault_info[];
@@ -292,6 +296,7 @@ static void die_kernel_fault(const char *msg, unsigned long addr,
 {
 	bust_spinlocks(1);
 
+	trace_rb_sreason_set("unknown_addr");
 	pr_alert("Unable to handle kernel %s at virtual address %016lx\n", msg,
 		 addr);
 
@@ -320,16 +325,20 @@ static void __do_kernel_fault(unsigned long addr, unsigned int esr,
 		return;
 
 	if (is_el1_permission_fault(addr, esr, regs)) {
-		if (esr & ESR_ELx_WNR)
+		if (esr & ESR_ELx_WNR) {
+			trace_rb_sreason_set("rw_only");
 			msg = "write to read-only memory";
-		else
+		} else {
+			trace_rb_sreason_set("read_unreadable");
 			msg = "read from unreadable memory";
+		}
 	} else if (addr < PAGE_SIZE) {
 		msg = "NULL pointer dereference";
+		trace_rb_sreason_set("null_pointer");
 	} else {
+		trace_rb_sreason_set("page_request");
 		msg = "paging request";
 	}
-
 	die_kernel_fault(msg, addr, esr, regs);
 }
 
@@ -678,11 +687,13 @@ static int do_sea(unsigned long addr, unsigned int esr, struct pt_regs *regs)
 
 	inf = esr_to_fault_info(esr);
 
+	trace_rb_sreason_set("SEA");
+
 	if (user_mode(regs) && apei_claim_sea(regs) == 0) {
-		/*
+	/*
 		 * APEI claimed this as a firmware-first notification.
 		 * Some processing deferred to task_work before ret_to_user().
-		 */
+	 */
 		return 0;
 	}
 
@@ -779,7 +790,8 @@ asmlinkage void __exception do_mem_abort(unsigned long addr, unsigned int esr,
 					 struct pt_regs *regs)
 {
 	const struct fault_info *inf = esr_to_fault_info(esr);
-
+	char attach_info_buffer[RB_SREASON_STR_MAX] = {0};
+	int err;
 	if (!inf->fn(addr, esr, regs))
 		return;
 
@@ -789,8 +801,12 @@ asmlinkage void __exception do_mem_abort(unsigned long addr, unsigned int esr,
 		show_pte(addr);
 	}
 
-	arm64_notify_die(inf->name, regs,
-			 inf->sig, inf->code, (void __user *)addr, esr);
+	trace_rb_sreason_set("unhandle_fault");
+	err = snprintf(attach_info_buffer, RB_SREASON_STR_MAX, "Unhandled_fault_%s", inf->name);
+	if (err >= 0)
+		trace_rb_attach_info_set(attach_info_buffer);
+
+	arm64_notify_die(inf->name, regs, inf->sig, inf->code, (void __user *)addr, esr);
 }
 
 asmlinkage void __exception do_el0_irq_bp_hardening(void)
@@ -826,6 +842,7 @@ asmlinkage void __exception do_sp_pc_abort(unsigned long addr,
 		local_daif_restore(DAIF_PROCCTX);
 	}
 
+	trace_rb_sreason_set("SP_PC_AE");
 	arm64_notify_die("SP/PC alignment exception", regs,
 			 SIGBUS, BUS_ADRALN, (void __user *)addr, esr);
 }
@@ -937,6 +954,8 @@ cortex_a76_erratum_1463225_debug_handler(struct pt_regs *regs)
 	return 0;
 }
 #endif /* CONFIG_ARM64_ERRATUM_1463225 */
+
+EXPORT_TRACEPOINT_SYMBOL_GPL(rb_attach_info_set);
 
 asmlinkage void __exception do_debug_exception(unsigned long addr_if_watchpoint,
 					       unsigned int esr,

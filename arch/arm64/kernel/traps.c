@@ -43,6 +43,8 @@
 #include <asm/system_misc.h>
 #include <asm/sysreg.h>
 
+#include <platform/trace/events/rainbow.h>
+
 static const char *handler[]= {
 	"Synchronous Abort",
 	"IRQ",
@@ -401,6 +403,8 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 
 	if (call_undef_hook(regs) == 0)
 		return;
+
+	trace_rb_sreason_set("undefine_cmd");
 
 	BUG_ON(!user_mode(regs));
 	force_signal_inject(SIGILL, ILL_ILLOPC, regs->pc);
@@ -793,6 +797,7 @@ asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 	pr_crit("Bad mode in %s handler detected on CPU%d, code 0x%08x -- %s\n",
 		handler[reason], smp_processor_id(), esr,
 		esr_get_class_string(esr));
+	trace_rb_sreason_set("bad_mode");
 
 	local_daif_mask();
 	panic("bad mode");
