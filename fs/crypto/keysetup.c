@@ -581,6 +581,7 @@ fscrypt_setup_encryption_info(struct inode *inode,
 			      bool need_dirhash_key)
 {
 	struct fscrypt_info *crypt_info;
+	union fscrypt_context ctx;
 	struct fscrypt_mode *mode;
 	struct key *master_key = NULL;
 	int res;
@@ -594,8 +595,21 @@ fscrypt_setup_encryption_info(struct inode *inode,
 		return -ENOMEM;
 
 	crypt_info->ci_inode = inode;
-	crypt_info->ci_policy = *policy;
-	memcpy(crypt_info->ci_nonce, nonce, FSCRYPT_FILE_NONCE_SIZE);
+
+	res = fscrypt_policy_from_context(&crypt_info->ci_policy, &ctx, res);
+	if (res) {
+		fscrypt_warn(inode,
+			     "Unrecognized or corrupt encryption context");
+		goto out;
+	}
+
+	memcpy(crypt_info->ci_nonce, fscrypt_context_nonce(&ctx),
+	       FSCRYPT_FILE_NONCE_SIZE);
+
+	if (!fscrypt_supported_policy(&crypt_info->ci_policy, inode)) {
+		res = -EINVAL;
+		goto out;
+	}
 
 	mode = select_encryption_mode(&crypt_info->ci_policy, inode);
 	if (IS_ERR(mode)) {
